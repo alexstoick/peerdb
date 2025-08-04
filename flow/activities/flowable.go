@@ -2,6 +2,7 @@ package activities
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -297,6 +298,29 @@ func (a *FlowableActivity) SyncFlow(
 	var syncingBatchID atomic.Int64
 	var syncState atomic.Pointer[string]
 	syncState.Store(shared.Ptr("setup"))
+	//fetch config from the DB.
+	var configBytes sql.RawBytes
+	if err := a.CatalogPool.QueryRow(ctx,
+		"SELECT config_proto FROM flows WHERE name = $1 LIMIT 1", config.FlowJobName,
+	).Scan(&configBytes); err != nil {
+		slog.Error("unable to query flow config from catalog", slog.Any("error", err))
+		return fmt.Errorf("unable to query flow config from catalog: %w", err)
+	}
+
+	var cfgFromDB protos.FlowConnectionConfigs
+	if err := proto.Unmarshal(configBytes, &cfgFromDB); err != nil {
+		slog.Error("unable to unmarshal flow config", slog.Any("error", err))
+		return fmt.Errorf("unable to unmarshal flow config: %w", err)
+	}
+
+	// compare config & cfgFromDB, if they differ, log a warning with the diff
+	if !proto.Equal(config, &cfgFromDB) {
+		slog.Warn("flow config from catalog differs from the one passed to SyncFlow",
+			config.TableMappings,
+			cfgFromDB.TableMappings,
+		)
+	}
+
 	shutdown := heartbeatRoutine(ctx, func() string {
 		// Must load Waiting after BatchID to avoid race saying we're waiting on currently processing batch
 		sBatchID := syncingBatchID.Load()
