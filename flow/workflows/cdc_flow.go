@@ -638,6 +638,10 @@ func CDCFlowWorkflow(
 		state.SyncFlowOptions.SrcTableIdNameMapping = setupFlowOutput.SrcTableIdNameMapping
 		state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_SNAPSHOT)
 
+		cfg.SrcTableIdNameMapping = setupFlowOutput.SrcTableIdNameMapping
+		//TODO: here we will also store the table mappings in the state.
+		uploadConfigToCatalog(ctx, cfg)
+
 		// next part of the setup is to snapshot-initial-copy and setup replication slots.
 		snapshotFlowID := GetChildWorkflowID("snapshot-flow", cfg.FlowJobName, originalRunID)
 
@@ -749,6 +753,9 @@ func CDCFlowWorkflow(
 			logger.Info("executed setup flow and snapshot flow, start running")
 			state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_RUNNING)
 		}
+		cfg.TableMappings = []*protos.TableMapping{} // clear the table mappings, they are now in state.SyncFlowOptions.TableMappings
+		state.SyncFlowOptions.TableMappings = []*protos.TableMapping{}
+		state.SyncFlowOptions.SrcTableIdNameMapping = map[uint32]string{}
 		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg, state)
 	}
 

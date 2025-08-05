@@ -81,6 +81,7 @@ message FlowConnectionConfigs {
 
   map<string, string> env = 24;
   uint32 version = 25;
+  map<uint32, string> src_table_id_name_mapping = 27;
 }
 
 message RenameTableOption {
