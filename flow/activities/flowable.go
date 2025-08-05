@@ -305,6 +305,7 @@ func (a *FlowableActivity) SyncFlow(
 		return fmt.Errorf("unable to query flow config from catalog: %w", err)
 	}
 
+	slog.Info("!!!!! fetched flow config from catalog")
 	var cfgFromDB protos.FlowConnectionConfigs
 	if err := proto.Unmarshal(configBytes, &cfgFromDB); err != nil {
 		slog.Error("unable to unmarshal flow config", slog.Any("error", err))

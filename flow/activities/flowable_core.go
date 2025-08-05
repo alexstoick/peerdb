@@ -120,6 +120,8 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 	pull func(TPull, context.Context, shared.CatalogPool, *otel_metrics.OtelManager, *model.PullRecordsRequest[Items]) error,
 	sync func(TSync, context.Context, *model.SyncRecordsRequest[Items]) (*model.SyncResponse, error),
 ) (*model.SyncResponse, error) {
+	slog.Info("!!!! syncCore called", slog.String("flowJobName", config.FlowJobName))
+
 	flowName := config.FlowJobName
 	ctx = context.WithValue(ctx, shared.FlowNameKey, flowName)
 	logger := internal.LoggerFromCtx(ctx)
@@ -182,7 +184,8 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 	errGroup, errCtx := errgroup.WithContext(ctx)
 	errGroup.Go(func() error {
 		return pull(srcConn, errCtx, a.CatalogPool, a.OtelManager, &model.PullRecordsRequest[Items]{
-			FlowJobName:           flowName,
+			FlowJobName: flowName,
+			// this is coming from very deep. i wonder if it's needed.
 			SrcTableIDNameMapping: options.SrcTableIdNameMapping,
 			TableNameMapping:      tblNameMapping,
 			LastOffset:            lastOffset,
