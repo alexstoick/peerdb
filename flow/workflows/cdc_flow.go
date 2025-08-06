@@ -767,6 +767,8 @@ func CDCFlowWorkflow(
 		WaitForCancellation: true,
 		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
 	}))
+	state.SyncFlowOptions.TableMappings = []*protos.TableMapping{}
+	state.SyncFlowOptions.SrcTableIdNameMapping = map[uint32]string{}
 	syncFlowFuture := workflow.ExecuteActivity(syncCtx, flowable.SyncFlow, cfg, state.SyncFlowOptions)
 
 	mainLoopSelector := workflow.NewNamedSelector(ctx, "MainLoop")
