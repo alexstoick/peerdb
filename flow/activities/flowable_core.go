@@ -3,6 +3,7 @@ package activities
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -126,13 +127,31 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 	ctx = context.WithValue(ctx, shared.FlowNameKey, flowName)
 	logger := internal.LoggerFromCtx(ctx)
 
-	tblNameMapping := make(map[string]model.NameAndExclude, len(options.TableMappings))
-	for _, v := range options.TableMappings {
+	//fetch config from the DB.
+	var configBytes sql.RawBytes
+	if err := a.CatalogPool.QueryRow(ctx,
+		"SELECT config_proto FROM flows WHERE name = $1 LIMIT 1", config.FlowJobName,
+	).Scan(&configBytes); err != nil {
+		slog.Error("unable to query flow config from catalog", slog.Any("error", err))
+		return nil, fmt.Errorf("unable to query flow config from catalog: %w", err)
+	}
+
+	slog.Info("!!!!! syncCore start: fetched flow config from catalog")
+	var cfgFromDB protos.FlowConnectionConfigs
+	if err := proto.Unmarshal(configBytes, &cfgFromDB); err != nil {
+		slog.Error("unable to unmarshal flow config", slog.Any("error", err))
+		return nil, fmt.Errorf("unable to unmarshal flow config: %w", err)
+	}
+
+	slog.Info("!!!!! syncCore start+1: cfgFromDB unmarshalled", slog.Any("cfgFromDB", cfgFromDB))
+
+	tblNameMapping := make(map[string]model.NameAndExclude, len(cfgFromDB.TableMappings))
+	for _, v := range cfgFromDB.TableMappings {
 		tblNameMapping[v.SourceTableIdentifier] = model.NewNameAndExclude(v.DestinationTableIdentifier, v.Exclude)
 	}
 
 	if err := srcConn.ConnectionActive(ctx); err != nil {
-		return nil, temporal.NewNonRetryableApplicationError("connection to source down", "disconnect", nil)
+		return nil, temporal.NewNonRetryableApplicationError("@@@ connection to source down", "disconnect", nil)
 	}
 
 	batchSize := options.BatchSize
@@ -186,7 +205,7 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 		return pull(srcConn, errCtx, a.CatalogPool, a.OtelManager, &model.PullRecordsRequest[Items]{
 			FlowJobName: flowName,
 			// this is coming from very deep. i wonder if it's needed.
-			SrcTableIDNameMapping: options.SrcTableIdNameMapping,
+			SrcTableIDNameMapping: cfgFromDB.SrcTableIdNameMapping,
 			TableNameMapping:      tblNameMapping,
 			LastOffset:            lastOffset,
 			ConsumedOffset:        &consumedOffset,
@@ -610,7 +629,7 @@ func (a *FlowableActivity) maintainReplConn(
 		select {
 		case <-ticker.C:
 			if err := srcConn.ReplPing(ctx); err != nil {
-				return a.Alerter.LogFlowError(ctx, flowName, fmt.Errorf("connection to source down: %w", err))
+				return a.Alerter.LogFlowError(ctx, flowName, fmt.Errorf("?!!! connection to source down: %w", err))
 			}
 		case <-syncDone:
 			return nil

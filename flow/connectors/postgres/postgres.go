@@ -461,8 +461,8 @@ func pullCore[Items model.Items](
 		return fmt.Errorf("unable to query flow config from catalog: %w", err)
 	}
 
-	slog.Info("!!!!! fetched flow config from catalog")
-	fmt.Printf("!!!! %+v\n", req)
+	slog.Info("!!!!! pullCore MIDDLE: fetched flow config from catalog")
+	fmt.Printf("!!!!!!!!!! %+v\n", req)
 	var cfgFromDB protos.FlowConnectionConfigs
 	if err := proto.Unmarshal(configBytes, &cfgFromDB); err != nil {
 		slog.Error("unable to unmarshal flow config", slog.Any("error", err))
