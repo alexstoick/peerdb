@@ -307,19 +307,11 @@ func (a *FlowableActivity) SyncFlow(
 		return fmt.Errorf("unable to query flow config from catalog: %w", err)
 	}
 
-	slog.Info("!!!!! fetched flow config from catalog")
+	slog.Info("!!!!! SyncFlow start: fetched flow config from catalog")
 	var cfgFromDB protos.FlowConnectionConfigs
 	if err := proto.Unmarshal(configBytes, &cfgFromDB); err != nil {
 		slog.Error("unable to unmarshal flow config", slog.Any("error", err))
 		return fmt.Errorf("unable to unmarshal flow config: %w", err)
-	}
-
-	// compare config & cfgFromDB, if they differ, log a warning with the diff
-	if !proto.Equal(config, &cfgFromDB) {
-		slog.Warn("flow config from catalog differs from the one passed to SyncFlow",
-			config.TableMappings,
-			cfgFromDB.TableMappings,
-		)
 	}
 
 	shutdown := heartbeatRoutine(ctx, func() string {
