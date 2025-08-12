@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"slices"
 	"strings"
 	"time"
 
@@ -105,7 +104,7 @@ func updateFlowConfigWithLatestSettings(
 	cloneCfg := proto.CloneOf(cfg)
 	cloneCfg.MaxBatchSize = state.SyncFlowOptions.BatchSize
 	cloneCfg.IdleTimeoutSeconds = state.SyncFlowOptions.IdleTimeoutSeconds
-	cloneCfg.TableMappings = state.SyncFlowOptions.TableMappings
+	//TODOAS: this is not needed. cloneCfg.TableMappings = state.SyncFlowOptions.TableMappings
 	cloneCfg.SnapshotNumRowsPerPartition = state.SnapshotNumRowsPerPartition
 	cloneCfg.SnapshotNumPartitionsOverride = state.SnapshotNumPartitionsOverride
 	cloneCfg.SnapshotMaxParallelWorkers = state.SnapshotMaxParallelWorkers
@@ -215,7 +214,7 @@ func processTableAdditions(
 		syncStateToConfigProtoInCatalog(ctx, cfg, state)
 		return nil
 	}
-	if internal.AdditionalTablesHasOverlap(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables) {
+	if internal.AdditionalTablesHasOverlap(cfg.TableMappings, flowConfigUpdate.AdditionalTables) {
 		logger.Warn("duplicate source/destination tables found in additionalTables")
 		syncStateToConfigProtoInCatalog(ctx, cfg, state)
 		return nil
@@ -314,7 +313,7 @@ func processTableAdditions(
 		if state.ActiveSignal == model.TerminateSignal || state.ActiveSignal == model.ResyncSignal {
 			if state.ActiveSignal == model.ResyncSignal {
 				// additional tables should also be resynced, we don't know how much was done so far
-				state.SyncFlowOptions.TableMappings = append(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables...)
+				//state.SyncFlowOptions.TableMappings = append(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables...)
 				resyncCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state)
 				state.DropFlowInput.FlowJobName = resyncCfg.FlowJobName
 				state.DropFlowInput.FlowConnectionConfigs = resyncCfg
@@ -331,7 +330,14 @@ func processTableAdditions(
 		}
 	}
 
-	maps.Copy(state.SyncFlowOptions.SrcTableIdNameMapping, res.SyncFlowOptions.SrcTableIdNameMapping)
+	//maps.Copy(state.SyncFlowOptions.SrcTableIdNameMapping, res.SyncFlowOptions.SrcTableIdNameMapping)
+	// TODOAS: this is now a problem, as it means I do not have the new src table mapping.
+	//for k, v := range res.SyncFlowOptions.SrcTableIdNameMapping {
+	//cfg.SrcTableIdNameMapping[k] = v
+	//}
+
+	//TODOAS: here we will also store the table mappings in the state.
+	//uploadConfigToCatalog(ctx, cfg)
 
 	//TOODAS: no need to have the table mappings in the sync flow options.
 	//state.SyncFlowOptions.TableMappings = append(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables...)
@@ -382,21 +388,6 @@ func processTableRemovals(
 		return err
 	}
 	logger.Info("tables removed from catalog")
-
-	// remove the tables from the sync flow options
-	removedTables := make(map[string]struct{}, len(state.FlowConfigUpdate.RemovedTables))
-	for _, removedTable := range state.FlowConfigUpdate.RemovedTables {
-		removedTables[removedTable.SourceTableIdentifier] = struct{}{}
-	}
-
-	maps.DeleteFunc(state.SyncFlowOptions.SrcTableIdNameMapping, func(k uint32, v string) bool {
-		_, removed := removedTables[v]
-		return removed
-	})
-	state.SyncFlowOptions.TableMappings = slices.DeleteFunc(state.SyncFlowOptions.TableMappings, func(tm *protos.TableMapping) bool {
-		_, removed := removedTables[tm.SourceTableIdentifier]
-		return removed
-	})
 
 	return nil
 }
@@ -567,13 +558,14 @@ func CDCFlowWorkflow(
 		// if resync is true, alter the table name schema mapping to temporarily add
 		// a suffix to the table names.
 		if cfg.Resync {
-			for _, mapping := range state.SyncFlowOptions.TableMappings {
-				if mapping.Engine != protos.TableEngine_CH_ENGINE_NULL {
-					mapping.DestinationTableIdentifier += "_resync"
-				}
-			}
+			//for _, mapping := range state.SyncFlowOptions.TableMappings {
+			//if mapping.Engine != protos.TableEngine_CH_ENGINE_NULL {
+			//mapping.DestinationTableIdentifier += "_resync"
+			//}
+			//}
 			// because we have renamed the tables.
-			cfg.TableMappings = state.SyncFlowOptions.TableMappings
+			// TODOAS: this will need to be resolved somehow
+			//cfg.TableMappings = state.SyncFlowOptions.TableMappings
 		}
 
 		// start the SetupFlow workflow as a child workflow, and wait for it to complete
@@ -646,17 +638,14 @@ func CDCFlowWorkflow(
 			}
 		}
 
-		state.SyncFlowOptions.SrcTableIdNameMapping = setupFlowOutput.SrcTableIdNameMapping
+		//state.SyncFlowOptions.SrcTableIdNameMapping = setupFlowOutput.SrcTableIdNameMapping
 		state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_SNAPSHOT)
 
 		//TODOAS: check this.
 		if cfg.SrcTableIdNameMapping == nil {
 			cfg.SrcTableIdNameMapping = make(map[uint32]string, len(setupFlowOutput.SrcTableIdNameMapping))
 		}
-		//cfg.SrcTableIdNameMapping = setupFlowOutput.SrcTableIdNameMapping
-		for k, v := range setupFlowOutput.SrcTableIdNameMapping {
-			cfg.SrcTableIdNameMapping[k] = v
-		}
+		maps.Copy(cfg.SrcTableIdNameMapping, setupFlowOutput.SrcTableIdNameMapping)
 		//TODOAS: here we will also store the table mappings in the state.
 		uploadConfigToCatalog(ctx, cfg)
 
@@ -713,7 +702,7 @@ func CDCFlowWorkflow(
 				SoftDeleteColName: cfg.SoftDeleteColName,
 			}
 
-			for _, mapping := range state.SyncFlowOptions.TableMappings {
+			for _, mapping := range cfg.TableMappings {
 				if mapping.Engine != protos.TableEngine_CH_ENGINE_NULL {
 					oldName := mapping.DestinationTableIdentifier
 					newName := strings.TrimSuffix(oldName, "_resync")
@@ -774,10 +763,7 @@ func CDCFlowWorkflow(
 			logger.Info("executed setup flow and snapshot flow, start running")
 			state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_RUNNING)
 		}
-		cfg.TableMappings = []*protos.TableMapping{} // clear the table mappings, they are now in state.SyncFlowOptions.TableMappings
-		state.SyncFlowOptions.TableMappings = []*protos.TableMapping{}
-		state.SyncFlowOptions.SrcTableIdNameMapping = map[uint32]string{}
-		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg.FlowJobName, nil)
+		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg.FlowJobName, state)
 	}
 
 	var finished bool
