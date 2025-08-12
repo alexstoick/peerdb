@@ -76,6 +76,8 @@ func (h *FlowRequestHandler) createCdcJobEntry(ctx context.Context,
 		return fmt.Errorf("unable to marshal flow config: %w", err)
 	}
 
+	slog.Warn("!!!! IN CDC JOB ENTRY", slog.Any("connConfigs", req.ConnectionConfigs))
+
 	slog.Warn("!!!! IN CDC JOB ENTRY")
 	if _, err := h.pool.Exec(ctx,
 		`INSERT INTO flows (workflow_id, name, source_peer, destination_peer, config_proto, status,

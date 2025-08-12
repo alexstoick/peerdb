@@ -472,6 +472,13 @@ func CDCFlowWorkflow(
 		return nil, errors.New("invalid connection configs")
 	}
 
+	cfgFromDB, err := internal.FetchConfigFromDB(cfg.FlowJobName)
+	if err != nil {
+		return nil, fmt.Errorf("unable to unmarshal flow config: %w", err)
+	}
+	oldCfg := *cfg
+	cfg = cfgFromDB
+
 	logger := log.With(workflow.GetLogger(ctx), slog.String(string(shared.FlowNameKey), cfg.FlowJobName))
 	if state == nil {
 		state = NewCDCFlowWorkflowState(ctx, logger, cfg)
@@ -558,7 +565,7 @@ func CDCFlowWorkflow(
 
 		logger.Info("mirror resumed", slog.Duration("after", time.Since(startTime)))
 		state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_RUNNING)
-		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg, state)
+		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, &oldCfg, state)
 	}
 
 	originalRunID := workflow.GetInfo(ctx).OriginalRunID
@@ -591,6 +598,7 @@ func CDCFlowWorkflow(
 	// for safety, rely on the idempotency of SetupFlow instead
 	// also, no signals are being handled until the loop starts, so no PAUSE/DROP will take here.
 	if state.CurrentFlowStatus != protos.FlowStatus_STATUS_RUNNING {
+		//have to get cfg from DB.
 		originalTableMappings := make([]*protos.TableMapping, 0, len(cfg.TableMappings))
 		for _, tableMapping := range cfg.TableMappings {
 			originalTableMappings = append(originalTableMappings, proto.CloneOf(tableMapping))
@@ -654,7 +662,7 @@ func CDCFlowWorkflow(
 			WaitForCancellation:   true,
 		}
 		setupFlowCtx := workflow.WithChildOptions(ctx, childSetupFlowOpts)
-		setupFlowFuture := workflow.ExecuteChildWorkflow(setupFlowCtx, SetupFlowWorkflow, cfg)
+		setupFlowFuture := workflow.ExecuteChildWorkflow(setupFlowCtx, SetupFlowWorkflow, oldCfg)
 
 		var setupFlowOutput *protos.SetupFlowOutput
 		var setupFlowError error
@@ -704,7 +712,7 @@ func CDCFlowWorkflow(
 		// so we can use the same cfg for snapshot flow, and then rely on being state being saved to catalog
 		// during any operation that triggers another snapshot (INCLUDING add tables).
 		// this could fail for very weird Temporal resets
-		snapshotFlowFuture := workflow.ExecuteChildWorkflow(snapshotFlowCtx, SnapshotFlowWorkflow, cfg)
+		snapshotFlowFuture := workflow.ExecuteChildWorkflow(snapshotFlowCtx, SnapshotFlowWorkflow, &oldCfg)
 		var snapshotDone bool
 		var snapshotError error
 		setupSnapshotSelector.AddFuture(snapshotFlowFuture, func(f workflow.Future) {
@@ -935,7 +943,7 @@ func CDCFlowWorkflow(
 			if state.ActiveSignal == model.TerminateSignal || state.ActiveSignal == model.ResyncSignal {
 				return state, workflow.NewContinueAsNewError(ctx, DropFlowWorkflow, state.DropFlowInput)
 			}
-			return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg, state)
+			return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, &oldCfg, state)
 		}
 	}
 }
