@@ -1239,9 +1239,13 @@ func (a *FlowableActivity) ReplicateXminPartition(ctx context.Context,
 	}
 }
 
-func (a *FlowableActivity) AddTablesToPublication(ctx context.Context, cfg *protos.FlowConnectionConfigs,
+func (a *FlowableActivity) AddTablesToPublication(ctx context.Context, flowJobName string,
 	additionalTableMappings []*protos.TableMapping,
 ) error {
+	cfg, err := internal.FetchConfigFromDB(flowJobName)
+	if err != nil {
+		return errors.New("invalid connection configs")
+	}
 	ctx = context.WithValue(ctx, shared.FlowNameKey, cfg.FlowJobName)
 	srcConn, err := connectors.GetByNameAs[*connpostgres.PostgresConnector](ctx, cfg.Env, a.CatalogPool, cfg.SourceName)
 	if err != nil {

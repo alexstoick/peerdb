@@ -57,7 +57,7 @@ func (s *SnapshotFlowExecution) setupReplication(
 
 	config, err := internal.FetchConfigFromDB(s.FlowJobName)
 	if err != nil {
-		return nil, fmt.Errorf("unable to fetch config from DB: %w", err)
+		return nil, fmt.Errorf("unable to fetch config from DB for flow-job-name %s; err : %w", s.FlowJobName, err)
 	}
 
 	tblNameMapping := make(map[string]string, len(config.TableMappings))
@@ -364,7 +364,7 @@ func SnapshotFlowWorkflow(
 	}
 
 	se := &SnapshotFlowExecution{
-		//config: config,
+		FlowJobName: flowJobName,
 		logger: log.With(workflow.GetLogger(ctx),
 			slog.String(string(shared.FlowNameKey), config.FlowJobName),
 			slog.String("sourcePeer", config.SourceName)),
