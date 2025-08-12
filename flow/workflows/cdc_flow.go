@@ -45,10 +45,10 @@ type CDCFlowWorkflowState struct {
 
 // returns a new empty PeerFlowState
 func NewCDCFlowWorkflowState(ctx workflow.Context, logger log.Logger, cfg *protos.FlowConnectionConfigs) *CDCFlowWorkflowState {
-	tableMappings := make([]*protos.TableMapping, 0, len(cfg.TableMappings))
-	for _, tableMapping := range cfg.TableMappings {
-		tableMappings = append(tableMappings, proto.CloneOf(tableMapping))
-	}
+	//tableMappings := make([]*protos.TableMapping, 0, len(cfg.TableMappings))
+	//for _, tableMapping := range cfg.TableMappings {
+	//tableMappings = append(tableMappings, proto.CloneOf(tableMapping))
+	//}
 	state := CDCFlowWorkflowState{
 		ActiveSignal:      model.NoopSignal,
 		CurrentFlowStatus: protos.FlowStatus_STATUS_SETUP,
@@ -56,7 +56,7 @@ func NewCDCFlowWorkflowState(ctx workflow.Context, logger log.Logger, cfg *proto
 		SyncFlowOptions: &protos.SyncFlowOptions{
 			BatchSize:          cfg.MaxBatchSize,
 			IdleTimeoutSeconds: cfg.IdleTimeoutSeconds,
-			TableMappings:      tableMappings,
+			//TableMappings:      tableMappings,
 		},
 		SnapshotNumRowsPerPartition:   cfg.SnapshotNumRowsPerPartition,
 		SnapshotNumPartitionsOverride: cfg.SnapshotNumPartitionsOverride,
@@ -423,19 +423,18 @@ func addCdcPropertiesSignalListener(
 
 func CDCFlowWorkflow(
 	ctx workflow.Context,
-	cfg *protos.FlowConnectionConfigs,
+	flowJobName string,
+	//cfg *protos.FlowConnectionConfigs,
 	state *CDCFlowWorkflowState,
 ) (*CDCFlowWorkflowResult, error) {
+	cfg, err := internal.FetchConfigFromDB(flowJobName)
 	if cfg == nil {
 		return nil, errors.New("invalid connection configs")
 	}
-
-	cfgFromDB, err := internal.FetchConfigFromDB(cfg.FlowJobName)
 	if err != nil {
 		return nil, fmt.Errorf("unable to unmarshal flow config: %w", err)
 	}
-	oldCfg := *cfg
-	cfg = cfgFromDB
+	//oldCfg := *cfg
 
 	logger := log.With(workflow.GetLogger(ctx), slog.String(string(shared.FlowNameKey), cfg.FlowJobName))
 	if state == nil {
@@ -523,7 +522,7 @@ func CDCFlowWorkflow(
 
 		logger.Info(fmt.Sprintf("mirror has been resumed after %s", time.Since(startTime).Round(time.Second)))
 		state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_RUNNING)
-		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, &oldCfg, state)
+		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg.FlowJobName, state)
 	}
 
 	originalRunID := workflow.GetInfo(ctx).OriginalRunID
@@ -620,7 +619,7 @@ func CDCFlowWorkflow(
 			WaitForCancellation:   true,
 		}
 		setupFlowCtx := workflow.WithChildOptions(ctx, childSetupFlowOpts)
-		setupFlowFuture := workflow.ExecuteChildWorkflow(setupFlowCtx, SetupFlowWorkflow, oldCfg)
+		setupFlowFuture := workflow.ExecuteChildWorkflow(setupFlowCtx, SetupFlowWorkflow, cfg.FlowJobName)
 
 		var setupFlowOutput *protos.SetupFlowOutput
 		var setupFlowError error
@@ -670,7 +669,7 @@ func CDCFlowWorkflow(
 		// so we can use the same cfg for snapshot flow, and then rely on being state being saved to catalog
 		// during any operation that triggers another snapshot (INCLUDING add tables).
 		// this could fail for very weird Temporal resets
-		snapshotFlowFuture := workflow.ExecuteChildWorkflow(snapshotFlowCtx, SnapshotFlowWorkflow, &oldCfg)
+		snapshotFlowFuture := workflow.ExecuteChildWorkflow(snapshotFlowCtx, SnapshotFlowWorkflow, cfg.FlowJobName)
 		var snapshotDone bool
 		var snapshotError error
 		setupSnapshotSelector.AddFuture(snapshotFlowFuture, func(f workflow.Future) {
@@ -725,6 +724,7 @@ func CDCFlowWorkflow(
 					InitialInterval: 1 * time.Minute,
 				},
 			})
+			// renameOpts will need to be computed again as it holds list of tables.
 			renameTablesFuture := workflow.ExecuteActivity(renameTablesCtx, flowable.RenameTables, renameOpts)
 			var renameTablesDone bool
 			var renameTablesError error
@@ -764,7 +764,7 @@ func CDCFlowWorkflow(
 		cfg.TableMappings = []*protos.TableMapping{} // clear the table mappings, they are now in state.SyncFlowOptions.TableMappings
 		state.SyncFlowOptions.TableMappings = []*protos.TableMapping{}
 		state.SyncFlowOptions.SrcTableIdNameMapping = map[uint32]string{}
-		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg, state)
+		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg.FlowJobName, state)
 	}
 
 	var finished bool

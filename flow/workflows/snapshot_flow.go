@@ -343,8 +343,13 @@ func (s *SnapshotFlowExecution) cloneTablesWithSlot(
 
 func SnapshotFlowWorkflow(
 	ctx workflow.Context,
-	config *protos.FlowConnectionConfigs,
+	flowJobName string,
 ) error {
+	config, err := internal.FetchConfigFromDB(flowJobName)
+	if err != nil {
+		return fmt.Errorf("unable to fetch config from DB: %w", err)
+	}
+
 	se := &SnapshotFlowExecution{
 		//config: config,
 		logger: log.With(workflow.GetLogger(ctx),

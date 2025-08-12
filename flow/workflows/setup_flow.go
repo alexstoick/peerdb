@@ -234,9 +234,14 @@ func (s *SetupFlowExecution) setupNormalizedTables(
 // executeSetupFlow executes the setup flow.
 func (s *SetupFlowExecution) executeSetupFlow(
 	ctx workflow.Context,
-	config *protos.FlowConnectionConfigs,
+	flowJobName string,
 ) (*protos.SetupFlowOutput, error) {
 	s.Info("executing setup flow")
+	// gotta fetch the config from the catalog.
+	config, err := internal.FetchConfigFromDB(flowJobName)
+	if err != nil {
+		return nil, fmt.Errorf("unable to fetch config from DB: %w", err)
+	}
 
 	// first check the connectionsAndSetupMetadataTables
 	if err := s.checkConnectionsAndSetupMetadataTables(ctx, config); err != nil {
@@ -267,18 +272,12 @@ func (s *SetupFlowExecution) executeSetupFlow(
 }
 
 // SetupFlowWorkflow is the workflow that sets up the flow.
-func SetupFlowWorkflow(ctx workflow.Context, config *protos.FlowConnectionConfigs) (*protos.SetupFlowOutput, error) {
-	// gotta fetch the config from the catalog.
-	cfgFromDB, err := internal.FetchConfigFromDB(config.FlowJobName)
-	if err != nil {
-		return nil, fmt.Errorf("unable to fetch config from DB: %w", err)
-	}
-
+func SetupFlowWorkflow(ctx workflow.Context, flowJobName string) (*protos.SetupFlowOutput, error) {
 	// create the setup flow execution
-	setupFlowExecution := NewSetupFlowExecution(ctx, config.FlowJobName)
+	setupFlowExecution := NewSetupFlowExecution(ctx, flowJobName)
 
 	// execute the setup flow
-	setupFlowOutput, err := setupFlowExecution.executeSetupFlow(ctx, cfgFromDB)
+	setupFlowOutput, err := setupFlowExecution.executeSetupFlow(ctx, flowJobName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute setup flow: %w", err)
 	}
