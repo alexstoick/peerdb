@@ -162,7 +162,7 @@ func (h *FlowRequestHandler) CreateCDCFlow(
 	// clear the table mappings; we are pulling them from the DB.
 	cfg.TableMappings = []*protos.TableMapping{}
 
-	if _, err := h.temporalClient.ExecuteWorkflow(ctx, workflowOptions, peerflow.CDCFlowWorkflow, cfg, nil); err != nil {
+	if _, err := h.temporalClient.ExecuteWorkflow(ctx, workflowOptions, peerflow.CDCFlowWorkflow, cfg.FlowJobName, nil); err != nil {
 		slog.Error("unable to start PeerFlow workflow", slog.Any("error", err))
 		return nil, fmt.Errorf("unable to start PeerFlow workflow: %w", err)
 	}

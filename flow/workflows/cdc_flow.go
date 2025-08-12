@@ -263,7 +263,7 @@ func processTableAdditions(
 	alterPublicationAddAdditionalTablesFuture := workflow.ExecuteActivity(
 		alterPublicationAddAdditionalTablesCtx,
 		flowable.AddTablesToPublication,
-		cfg, flowConfigUpdate.AdditionalTables)
+		cfg.FlowJobName, flowConfigUpdate.AdditionalTables)
 
 	var res *CDCFlowWorkflowResult
 	var addTablesFlowErr error
@@ -276,12 +276,15 @@ func processTableAdditions(
 			additionalTablesCfg := proto.CloneOf(cfg)
 			additionalTablesCfg.DoInitialSnapshot = true
 			additionalTablesCfg.InitialSnapshotOnly = true
-			additionalTablesCfg.TableMappings = flowConfigUpdate.AdditionalTables
+			//additionalTablesCfg.TableMappings = cfg.TableMappings + flowConfigUpdate.AdditionalTables
+			additionalTablesCfg.TableMappings = append(cfg.TableMappings, flowConfigUpdate.AdditionalTables...)
 			additionalTablesCfg.Resync = false
 			additionalTablesCfg.SnapshotNumRowsPerPartition = state.SnapshotNumRowsPerPartition
 			additionalTablesCfg.SnapshotNumPartitionsOverride = state.SnapshotNumPartitionsOverride
 			additionalTablesCfg.SnapshotMaxParallelWorkers = state.SnapshotMaxParallelWorkers
 			additionalTablesCfg.SnapshotNumTablesInParallel = state.SnapshotNumTablesInParallel
+
+			uploadConfigToCatalog(ctx, additionalTablesCfg)
 
 			// execute the sync flow as a child workflow
 			childAddTablesCDCFlowOpts := workflow.ChildWorkflowOptions{
@@ -297,7 +300,7 @@ func processTableAdditions(
 			childAddTablesCDCFlowFuture := workflow.ExecuteChildWorkflow(
 				childAddTablesCDCFlowCtx,
 				CDCFlowWorkflow,
-				additionalTablesCfg,
+				additionalTablesCfg.FlowJobName,
 				nil,
 			)
 			addTablesSelector.AddFuture(childAddTablesCDCFlowFuture, func(f workflow.Future) {
@@ -330,7 +333,8 @@ func processTableAdditions(
 
 	maps.Copy(state.SyncFlowOptions.SrcTableIdNameMapping, res.SyncFlowOptions.SrcTableIdNameMapping)
 
-	state.SyncFlowOptions.TableMappings = append(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables...)
+	//TOODAS: no need to have the table mappings in the sync flow options.
+	//state.SyncFlowOptions.TableMappings = append(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables...)
 	logger.Info("additional tables added to sync flow")
 	return nil
 }
@@ -645,8 +649,15 @@ func CDCFlowWorkflow(
 		state.SyncFlowOptions.SrcTableIdNameMapping = setupFlowOutput.SrcTableIdNameMapping
 		state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_SNAPSHOT)
 
-		cfg.SrcTableIdNameMapping = setupFlowOutput.SrcTableIdNameMapping
-		//TODO: here we will also store the table mappings in the state.
+		//TODOAS: check this.
+		if cfg.SrcTableIdNameMapping == nil {
+			cfg.SrcTableIdNameMapping = make(map[uint32]string, len(setupFlowOutput.SrcTableIdNameMapping))
+		}
+		//cfg.SrcTableIdNameMapping = setupFlowOutput.SrcTableIdNameMapping
+		for k, v := range setupFlowOutput.SrcTableIdNameMapping {
+			cfg.SrcTableIdNameMapping[k] = v
+		}
+		//TODOAS: here we will also store the table mappings in the state.
 		uploadConfigToCatalog(ctx, cfg)
 
 		// next part of the setup is to snapshot-initial-copy and setup replication slots.
@@ -901,7 +912,7 @@ func CDCFlowWorkflow(
 			if state.ActiveSignal == model.TerminateSignal || state.ActiveSignal == model.ResyncSignal {
 				return state, workflow.NewContinueAsNewError(ctx, DropFlowWorkflow, state.DropFlowInput)
 			}
-			return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, &oldCfg, state)
+			return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg.FlowJobName, state)
 		}
 	}
 }
