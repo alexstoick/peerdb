@@ -723,6 +723,8 @@ func CDCFlowWorkflow(
 		// so we can use the same cfg for snapshot flow, and then rely on being state being saved to catalog
 		// during any operation that triggers another snapshot (INCLUDING add tables).
 		// this could fail for very weird Temporal resets
+
+		///TODOAS : this will snapshot ALL Tables it cannot tell which ones are new.
 		snapshotFlowFuture := workflow.ExecuteChildWorkflow(snapshotFlowCtx, SnapshotFlowWorkflow, cfg.FlowJobName)
 		var snapshotDone bool
 		var snapshotError error
@@ -818,7 +820,7 @@ func CDCFlowWorkflow(
 		cfg.TableMappings = []*protos.TableMapping{} // clear the table mappings, they are now in state.SyncFlowOptions.TableMappings
 		state.SyncFlowOptions.TableMappings = []*protos.TableMapping{}
 		state.SyncFlowOptions.SrcTableIdNameMapping = map[uint32]string{}
-		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg.FlowJobName, state)
+		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg.FlowJobName, nil)
 	}
 
 	var finished bool
@@ -829,9 +831,7 @@ func CDCFlowWorkflow(
 		WaitForCancellation: true,
 		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
 	}))
-	state.SyncFlowOptions.TableMappings = []*protos.TableMapping{}
-	state.SyncFlowOptions.SrcTableIdNameMapping = map[uint32]string{}
-	syncFlowFuture := workflow.ExecuteActivity(syncCtx, flowable.SyncFlow, cfg, state.SyncFlowOptions)
+	syncFlowFuture := workflow.ExecuteActivity(syncCtx, flowable.SyncFlow, cfg, nil)
 
 	mainLoopSelector := workflow.NewNamedSelector(ctx, "MainLoop")
 	mainLoopSelector.AddReceive(ctx.Done(), func(_ workflow.ReceiveChannel, _ bool) {
@@ -955,7 +955,7 @@ func CDCFlowWorkflow(
 			if state.ActiveSignal == model.TerminateSignal || state.ActiveSignal == model.ResyncSignal {
 				return state, workflow.NewContinueAsNewError(ctx, DropFlowWorkflow, state.DropFlowInput)
 			}
-			return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg.FlowJobName, state)
+			return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg.FlowJobName, nil)
 		}
 	}
 }
