@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -130,6 +132,12 @@ func (a *FlowableActivity) EnsurePullability(
 	}
 	defer connectors.CloseConnector(ctx, srcConn)
 
+	cfg, err := internal.FetchConfigFromDB(config.FlowJobName)
+	if err != nil {
+		return nil, a.Alerter.LogFlowError(ctx, config.FlowJobName, fmt.Errorf("failed to fetch config from DB: %w", err))
+	}
+
+	config.SourceTableIdentifiers = slices.Sorted(maps.Keys(internal.TableNameMapping(cfg.TableMappings)))
 	output, err := srcConn.EnsurePullability(ctx, config)
 	if err != nil {
 		return nil, a.Alerter.LogFlowError(ctx, config.FlowJobName, fmt.Errorf("failed to ensure pullability: %w", err))
@@ -170,6 +178,13 @@ func (a *FlowableActivity) SetupTableSchema(
 		return "getting table schema"
 	})
 	defer shutdown()
+
+	// have to fetch config from the DB
+	cfg, err := internal.FetchConfigFromDB(config.FlowName)
+	if err != nil {
+		return a.Alerter.LogFlowError(ctx, config.FlowName, fmt.Errorf("failed to fetch config from DB: %w", err))
+	}
+	config.TableMappings = cfg.TableMappings
 
 	logger := internal.LoggerFromCtx(ctx)
 	ctx = context.WithValue(ctx, shared.FlowNameKey, config.FlowName)
@@ -218,6 +233,13 @@ func (a *FlowableActivity) CreateNormalizedTable(
 ) (*protos.SetupNormalizedTableBatchOutput, error) {
 	numTablesSetup := atomic.Uint32{}
 	numTablesToSetup := atomic.Int32{}
+
+	cfg, err := internal.FetchConfigFromDB(config.FlowName)
+	if err != nil {
+		return nil, a.Alerter.LogFlowError(ctx, config.FlowName, fmt.Errorf("failed to fetch config from DB: %w", err))
+	}
+
+	config.TableMappings = cfg.TableMappings
 
 	shutdown := heartbeatRoutine(ctx, func() string {
 		return fmt.Sprintf("setting up normalized tables - %d of %d done", numTablesSetup.Load(), numTablesToSetup.Load())
