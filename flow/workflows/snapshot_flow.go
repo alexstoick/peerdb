@@ -27,8 +27,9 @@ const (
 )
 
 type SnapshotFlowExecution struct {
-	FlowJobName string
-	logger      log.Logger
+	FlowJobName      string
+	logger           log.Logger
+	AdditionalTables []*protos.TableMapping
 }
 
 func getPeerType(wCtx workflow.Context, name string) (protos.DBType, error) {
@@ -60,8 +61,8 @@ func (s *SnapshotFlowExecution) setupReplication(
 		return nil, fmt.Errorf("unable to fetch config from DB for flow-job-name %s; err : %w", s.FlowJobName, err)
 	}
 
-	tblNameMapping := make(map[string]string, len(config.TableMappings))
-	for _, v := range config.TableMappings {
+	tblNameMapping := make(map[string]string, len(s.AdditionalTables))
+	for _, v := range s.AdditionalTables {
 		tblNameMapping[v.SourceTableIdentifier] = v.DestinationTableIdentifier
 	}
 
@@ -357,6 +358,7 @@ func (s *SnapshotFlowExecution) cloneTablesWithSlot(
 func SnapshotFlowWorkflow(
 	ctx workflow.Context,
 	flowJobName string,
+	additionalTables []*protos.TableMapping,
 ) error {
 	config, err := internal.FetchConfigFromDB(flowJobName)
 	if err != nil {
@@ -364,7 +366,8 @@ func SnapshotFlowWorkflow(
 	}
 
 	se := &SnapshotFlowExecution{
-		FlowJobName: flowJobName,
+		FlowJobName:      flowJobName,
+		AdditionalTables: additionalTables,
 		logger: log.With(workflow.GetLogger(ctx),
 			slog.String(string(shared.FlowNameKey), config.FlowJobName),
 			slog.String("sourcePeer", config.SourceName)),

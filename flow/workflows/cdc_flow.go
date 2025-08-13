@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -260,11 +261,11 @@ func processTableAdditions(
 		syncStateToConfigProtoInCatalog(ctx, cfg, state)
 		return nil
 	}
-	if internal.AdditionalTablesHasOverlap(cfg.TableMappings, flowConfigUpdate.AdditionalTables) {
-		logger.Warn("duplicate source/destination tables found in additionalTables")
-		syncStateToConfigProtoInCatalog(ctx, cfg, state)
-		return nil
-	}
+	//if internal.AdditionalTablesHasOverlap(cfg.TableMappings, flowConfigUpdate.AdditionalTables) {
+	//logger.Warn("duplicate source/destination tables found in additionalTables")
+	//syncStateToConfigProtoInCatalog(ctx, cfg, state)
+	//return nil
+	//}
 	state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_SNAPSHOT)
 
 	addTablesSelector := workflow.NewNamedSelector(ctx, "AddTables")
@@ -313,11 +314,17 @@ func processTableAdditions(
 				WaitForCancellation:   true,
 			}
 			childAddTablesCDCFlowCtx := workflow.WithChildOptions(ctx, childAddTablesCDCFlowOpts)
+			slog.Info("!!!!!!!!!!! Executing child CDCFlow for additional tables",
+				slog.Any("additionalTablesCfg", additionalTablesCfg),
+				slog.Any("state", state),
+			)
+
 			childAddTablesCDCFlowFuture := workflow.ExecuteChildWorkflow(
 				childAddTablesCDCFlowCtx,
 				CDCFlowWorkflow,
 				additionalTablesCfg.FlowJobName,
 				nil,
+				//state,
 			)
 			addTablesSelector.AddFuture(childAddTablesCDCFlowFuture, func(f workflow.Future) {
 				addTablesFlowErr = f.Get(childAddTablesCDCFlowCtx, &res)
@@ -515,7 +522,6 @@ func CDCFlowWorkflow(
 	if err != nil {
 		return nil, fmt.Errorf("unable to unmarshal flow config: %w", err)
 	}
-	//oldCfg := *cfg
 
 	logger := log.With(workflow.GetLogger(ctx), slog.String(string(shared.FlowNameKey), cfg.FlowJobName))
 	if state == nil {
@@ -731,6 +737,32 @@ func CDCFlowWorkflow(
 		if cfg.SrcTableIdNameMapping == nil {
 			cfg.SrcTableIdNameMapping = make(map[uint32]string, len(setupFlowOutput.SrcTableIdNameMapping))
 		}
+		// list of table names which are in cfg but not in the setupFlowOutput
+
+		var newTables []string
+
+		if cfg.SrcTableIdNameMapping == nil {
+			cfg.SrcTableIdNameMapping = make(map[uint32]string)
+		}
+
+		for k, v := range setupFlowOutput.SrcTableIdNameMapping {
+			if _, exists := cfg.SrcTableIdNameMapping[k]; !exists {
+				newTables = append(newTables, v)
+				cfg.SrcTableIdNameMapping[k] = v
+			}
+		}
+
+		// compute additional tables by selecting
+
+		var additionalTables []*protos.TableMapping
+		for _, tableMapping := range cfg.TableMappings {
+			if slices.Contains(newTables, tableMapping.SourceTableIdentifier) {
+				additionalTables = append(additionalTables, tableMapping)
+			}
+		}
+
+		slog.Info("!!!!! computed additional tables", slog.Any("additionalTables", additionalTables))
+
 		maps.Copy(cfg.SrcTableIdNameMapping, setupFlowOutput.SrcTableIdNameMapping)
 		//TODOAS: here we will also store the table mappings in the state.
 		uploadConfigToCatalog(ctx, cfg)
@@ -757,7 +789,13 @@ func CDCFlowWorkflow(
 		// this could fail for very weird Temporal resets
 
 		///TODOAS : this will snapshot ALL Tables it cannot tell which ones are new.
-		snapshotFlowFuture := workflow.ExecuteChildWorkflow(snapshotFlowCtx, SnapshotFlowWorkflow, cfg.FlowJobName)
+		snapshotFlowFuture := workflow.ExecuteChildWorkflow(
+			snapshotFlowCtx,
+			SnapshotFlowWorkflow,
+			cfg.FlowJobName,
+			additionalTables,
+		)
+
 		var snapshotDone bool
 		var snapshotError error
 		setupSnapshotSelector.AddFuture(snapshotFlowFuture, func(f workflow.Future) {
