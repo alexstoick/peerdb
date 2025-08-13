@@ -3,7 +3,6 @@ package activities
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -80,7 +79,6 @@ func (a *FlowableActivity) getTableNameSchemaMapping(ctx context.Context, flowNa
 func (a *FlowableActivity) applySchemaDeltas(
 	ctx context.Context,
 	config *protos.FlowConnectionConfigs,
-	options *protos.SyncFlowOptions,
 	schemaDeltas []*protos.TableSchemaDelta,
 ) error {
 	filteredTableMappings := make([]*protos.TableMapping, 0, len(schemaDeltas))
@@ -127,20 +125,9 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 	ctx = context.WithValue(ctx, shared.FlowNameKey, flowName)
 	logger := internal.LoggerFromCtx(ctx)
 
-	//fetch config from the DB.
-	var configBytes sql.RawBytes
-	if err := a.CatalogPool.QueryRow(ctx,
-		"SELECT config_proto FROM flows WHERE name = $1 LIMIT 1", config.FlowJobName,
-	).Scan(&configBytes); err != nil {
-		slog.Error("unable to query flow config from catalog", slog.Any("error", err))
+	cfgFromDB, err := internal.FetchConfigFromDB(flowName)
+	if err != nil {
 		return nil, fmt.Errorf("unable to query flow config from catalog: %w", err)
-	}
-
-	slog.Info("!!!!! syncCore start: fetched flow config from catalog")
-	var cfgFromDB protos.FlowConnectionConfigs
-	if err := proto.Unmarshal(configBytes, &cfgFromDB); err != nil {
-		slog.Error("unable to unmarshal flow config", slog.Any("error", err))
-		return nil, fmt.Errorf("unable to unmarshal flow config: %w", err)
 	}
 
 	slog.Info("!!!!! syncCore start+1: cfgFromDB unmarshalled", slog.Any("cfgFromDB", cfgFromDB))
@@ -153,11 +140,13 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 	if err := srcConn.ConnectionActive(ctx); err != nil {
 		return nil, temporal.NewNonRetryableApplicationError("@@@ connection to source down", "disconnect", nil)
 	}
+	slog.Info("!!!!! syncCore start+2")
 
-	batchSize := options.BatchSize
+	batchSize := config.MaxBatchSize
 	if batchSize == 0 {
 		batchSize = 250_000
 	}
+	slog.Info("!!!!! syncCore start+3")
 
 	lastOffset, err := func() (model.CdcCheckpoint, error) {
 		if myConn, isMy := any(srcConn).(*connmysql.MySqlConnector); isMy {
@@ -211,7 +200,7 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 			ConsumedOffset:        &consumedOffset,
 			MaxBatchSize:          batchSize,
 			IdleTimeout: internal.PeerDBCDCIdleTimeoutSeconds(
-				int(options.IdleTimeoutSeconds),
+				int(config.IdleTimeoutSeconds),
 			),
 			TableNameSchemaMapping:      tableNameSchemaMapping,
 			OverridePublicationName:     config.PublicationName,
@@ -251,7 +240,7 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 			return nil, fmt.Errorf("failed to sync schema: %w", err)
 		}
 
-		return nil, a.applySchemaDeltas(ctx, config, options, recordBatchSync.SchemaDeltas)
+		return nil, a.applySchemaDeltas(ctx, config, recordBatchSync.SchemaDeltas)
 	}
 
 	var res *model.SyncResponse
@@ -347,7 +336,7 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 	a.OtelManager.Metrics.CurrentBatchIdGauge.Record(ctx, res.CurrentSyncBatchID)
 
 	syncState.Store(shared.Ptr("updating schema"))
-	if err := a.applySchemaDeltas(ctx, config, options, res.TableSchemaDeltas); err != nil {
+	if err := a.applySchemaDeltas(ctx, config, res.TableSchemaDeltas); err != nil {
 		return nil, err
 	}
 
