@@ -137,23 +137,6 @@ func (h *FlowRequestHandler) cdcFlowStatus(
 		slog.Error("unable to query flow config from catalog", slog.Any("error", err))
 		return nil, err
 	}
-	workflowID, err := h.getWorkflowID(ctx, req.FlowJobName)
-	if err != nil {
-		slog.Error("unable to get the workflow ID of mirror", slog.Any("error", err))
-		return nil, err
-	}
-	state, err := h.getCDCWorkflowState(ctx, workflowID)
-	if err != nil {
-		slog.Error("unable to get the state of mirror", slog.Any("error", err))
-		return nil, err
-	}
-
-	// patching config to show latest values from state
-	if state.SyncFlowOptions != nil {
-		config.IdleTimeoutSeconds = state.SyncFlowOptions.IdleTimeoutSeconds
-		config.MaxBatchSize = state.SyncFlowOptions.BatchSize
-		//config.TableMappings = state.SyncFlowOptions.TableMappings
-	}
 
 	srcType, err := connectors.LoadPeerType(ctx, h.pool, config.SourceName)
 	if err != nil {

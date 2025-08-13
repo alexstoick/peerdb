@@ -25,8 +25,6 @@ import (
 type CDCFlowWorkflowState struct {
 	// flow config update request, set to nil after processed
 	FlowConfigUpdate *protos.CDCFlowConfigUpdate
-	// options passed to all SyncFlows
-	SyncFlowOptions *protos.SyncFlowOptions
 	// for becoming DropFlow
 	DropFlowInput *protos.DropFlowInput
 	// used for computing backoff timeout
@@ -35,33 +33,14 @@ type CDCFlowWorkflowState struct {
 	// Current signalled state of the peer flow.
 	ActiveSignal      model.CDCFlowSignal
 	CurrentFlowStatus protos.FlowStatus
-
-	// Initial load settings
-	SnapshotNumRowsPerPartition   uint32
-	SnapshotNumPartitionsOverride uint32
-	SnapshotMaxParallelWorkers    uint32
-	SnapshotNumTablesInParallel   uint32
 }
 
 // returns a new empty PeerFlowState
 func NewCDCFlowWorkflowState(ctx workflow.Context, logger log.Logger, cfg *protos.FlowConnectionConfigs) *CDCFlowWorkflowState {
-	//tableMappings := make([]*protos.TableMapping, 0, len(cfg.TableMappings))
-	//for _, tableMapping := range cfg.TableMappings {
-	//tableMappings = append(tableMappings, proto.CloneOf(tableMapping))
-	//}
 	state := CDCFlowWorkflowState{
 		ActiveSignal:      model.NoopSignal,
 		CurrentFlowStatus: protos.FlowStatus_STATUS_SETUP,
 		FlowConfigUpdate:  nil,
-		SyncFlowOptions: &protos.SyncFlowOptions{
-			BatchSize:          cfg.MaxBatchSize,
-			IdleTimeoutSeconds: cfg.IdleTimeoutSeconds,
-			//TableMappings:      tableMappings,
-		},
-		SnapshotNumRowsPerPartition:   cfg.SnapshotNumRowsPerPartition,
-		SnapshotNumPartitionsOverride: cfg.SnapshotNumPartitionsOverride,
-		SnapshotMaxParallelWorkers:    cfg.SnapshotMaxParallelWorkers,
-		SnapshotNumTablesInParallel:   cfg.SnapshotNumTablesInParallel,
 	}
 	syncStatusToCatalog(ctx, logger, state.CurrentFlowStatus)
 	return &state
@@ -100,16 +79,17 @@ func GetChildWorkflowID(
 
 func updateFlowConfigWithLatestSettings(
 	cfg *protos.FlowConnectionConfigs,
-	state *CDCFlowWorkflowState,
+	flowConfigUpdate *protos.CDCFlowConfigUpdate,
 ) *protos.FlowConnectionConfigs {
 	cloneCfg := proto.CloneOf(cfg)
-	cloneCfg.MaxBatchSize = state.SyncFlowOptions.BatchSize
-	cloneCfg.IdleTimeoutSeconds = state.SyncFlowOptions.IdleTimeoutSeconds
-	//TODOAS: this is not needed. cloneCfg.TableMappings = state.SyncFlowOptions.TableMappings
-	cloneCfg.SnapshotNumRowsPerPartition = state.SnapshotNumRowsPerPartition
-	cloneCfg.SnapshotNumPartitionsOverride = state.SnapshotNumPartitionsOverride
-	cloneCfg.SnapshotMaxParallelWorkers = state.SnapshotMaxParallelWorkers
-	cloneCfg.SnapshotNumTablesInParallel = state.SnapshotNumTablesInParallel
+	if flowConfigUpdate != nil {
+		cloneCfg.MaxBatchSize = flowConfigUpdate.BatchSize
+		cloneCfg.IdleTimeoutSeconds = flowConfigUpdate.IdleTimeout
+		cloneCfg.SnapshotNumRowsPerPartition = flowConfigUpdate.SnapshotNumRowsPerPartition
+		cloneCfg.SnapshotNumPartitionsOverride = flowConfigUpdate.SnapshotNumPartitionsOverride
+		cloneCfg.SnapshotMaxParallelWorkers = flowConfigUpdate.SnapshotMaxParallelWorkers
+		cloneCfg.SnapshotNumTablesInParallel = flowConfigUpdate.SnapshotNumTablesInParallel
+	}
 	return cloneCfg
 }
 
@@ -119,9 +99,9 @@ type CDCFlowWorkflowResult = CDCFlowWorkflowState
 func syncStateToConfigProtoInCatalog(
 	ctx workflow.Context,
 	cfg *protos.FlowConnectionConfigs,
-	state *CDCFlowWorkflowState,
+	flowConfigUpdate *protos.CDCFlowConfigUpdate,
 ) *protos.FlowConnectionConfigs {
-	cloneCfg := updateFlowConfigWithLatestSettings(cfg, state)
+	cloneCfg := updateFlowConfigWithLatestSettings(cfg, flowConfigUpdate)
 	uploadConfigToCatalog(ctx, cloneCfg)
 	return cloneCfg
 }
@@ -149,36 +129,29 @@ func processCDCFlowConfigUpdate(
 ) error {
 	flowConfigUpdate := state.FlowConfigUpdate
 
-	// only modify for options since SyncFlow uses it
-	if flowConfigUpdate.BatchSize > 0 {
-		state.SyncFlowOptions.BatchSize = flowConfigUpdate.BatchSize
-	}
-	if flowConfigUpdate.IdleTimeout > 0 {
-		state.SyncFlowOptions.IdleTimeoutSeconds = flowConfigUpdate.IdleTimeout
-	}
 	if flowConfigUpdate.UpdatedEnv != nil {
 		if cfg.Env == nil {
 			cfg.Env = make(map[string]string, len(flowConfigUpdate.UpdatedEnv))
 		}
 		maps.Copy(cfg.Env, flowConfigUpdate.UpdatedEnv)
 	}
-	if flowConfigUpdate.SnapshotNumRowsPerPartition > 0 {
-		state.SnapshotNumRowsPerPartition = flowConfigUpdate.SnapshotNumRowsPerPartition
-	}
-	if flowConfigUpdate.SnapshotNumPartitionsOverride > 0 {
-		state.SnapshotNumPartitionsOverride = flowConfigUpdate.SnapshotNumPartitionsOverride
-	}
-	if flowConfigUpdate.SnapshotMaxParallelWorkers > 0 {
-		state.SnapshotMaxParallelWorkers = flowConfigUpdate.SnapshotMaxParallelWorkers
-	}
-	if flowConfigUpdate.SnapshotNumTablesInParallel > 0 {
-		state.SnapshotNumTablesInParallel = flowConfigUpdate.SnapshotNumTablesInParallel
-	}
+	// Update the flowConfig settings into the DB.
+	slog.Info("!!!!!!!! SETTING STATE IN DB BEFORE ADDING TABLES",
+		slog.Any("flowConfigUpdate", state.FlowConfigUpdate),
+		slog.Any("cfg", cfg),
+	)
+	cfg = syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
+
+	slog.Info("!!!!!!!! UPDATED STATE IN DB BEFORE ADDING TABLES",
+		slog.Any("cfg", cfg),
+	)
 
 	tablesAreAdded := len(flowConfigUpdate.AdditionalTables) > 0
 	tablesAreRemoved := len(flowConfigUpdate.RemovedTables) > 0
-	if tablesAreAdded || tablesAreRemoved {
-		logger.Info("processing CDCFlowConfigUpdate", slog.Any("updatedState", flowConfigUpdate))
+	if !tablesAreAdded && !tablesAreRemoved {
+		syncStateToConfigProtoInCatalog(ctx, cfg, state)
+		return nil
+	}
 
 		if tablesAreAdded {
 			if err := processTableAdditions(ctx, logger, cfg, state, mirrorNameSearch); err != nil {
@@ -258,7 +231,7 @@ func processTableAdditions(
 ) error {
 	flowConfigUpdate := state.FlowConfigUpdate
 	if len(flowConfigUpdate.AdditionalTables) == 0 {
-		syncStateToConfigProtoInCatalog(ctx, cfg, state)
+		syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
 		return nil
 	}
 	//if internal.AdditionalTablesHasOverlap(cfg.TableMappings, flowConfigUpdate.AdditionalTables) {
@@ -271,7 +244,37 @@ func processTableAdditions(
 	addTablesSelector := workflow.NewNamedSelector(ctx, "AddTables")
 	addTablesSelector.AddReceive(ctx.Done(), func(_ workflow.ReceiveChannel, _ bool) {})
 	flowSignalStateChangeChan := model.FlowSignalStateChange.GetSignalChannel(ctx)
-	flowSignalStateChangeChan.AddToSelector(addTablesSelector, handleFlowSignalStateChange(ctx, cfg, state, logger, "AddTables"))
+	flowSignalStateChangeChan.AddToSelector(addTablesSelector, func(val *protos.FlowStateChangeRequest, _ bool) {
+		if val.RequestedFlowState == protos.FlowStatus_STATUS_TERMINATING {
+			logger.Info("terminating CDCFlow during table additions")
+			state.ActiveSignal = model.TerminateSignal
+			dropCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
+			state.DropFlowInput = &protos.DropFlowInput{
+				FlowJobName:           dropCfg.FlowJobName,
+				FlowConnectionConfigs: dropCfg,
+				DropFlowStats:         val.DropMirrorStats,
+				SkipDestinationDrop:   val.SkipDestinationDrop,
+			}
+		} else if val.RequestedFlowState == protos.FlowStatus_STATUS_RESYNC {
+			logger.Info("resync requested during table additions")
+			state.ActiveSignal = model.ResyncSignal
+			// since we are adding to TableMappings, multiple signals can lead to duplicates
+			// we should ContinueAsNew after the first signal in the selector, but just in case
+			cfg.Resync = true
+			cfg.DoInitialSnapshot = true
+			state.DropFlowInput = &protos.DropFlowInput{
+				// to be filled in just before ContinueAsNew
+				FlowJobName:           "",
+				FlowConnectionConfigs: nil,
+				DropFlowStats:         val.DropMirrorStats,
+				SkipDestinationDrop:   val.SkipDestinationDrop,
+				Resync:                true,
+			}
+		} else if val.RequestedFlowState == protos.FlowStatus_STATUS_PAUSED {
+			logger.Info("pause requested during table additions, ignoring")
+		}
+	})
+>>>>>>> d63ec1cc (make sure that updates to all attributes get synced through)
 
 	logger.Info("altering publication for additional tables")
 	alterPublicationAddAdditionalTablesCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
@@ -291,15 +294,11 @@ func processTableAdditions(
 			additionalTablesUUID := GetUUID(ctx)
 			childAdditionalTablesCDCFlowID := GetChildWorkflowID("additional-cdc-flow", cfg.FlowJobName, additionalTablesUUID)
 			additionalTablesCfg := proto.CloneOf(cfg)
+			// TODOAS: should the `doInitialSnapshot` just come from cfg?
 			additionalTablesCfg.DoInitialSnapshot = true
 			additionalTablesCfg.InitialSnapshotOnly = true
-			//additionalTablesCfg.TableMappings = cfg.TableMappings + flowConfigUpdate.AdditionalTables
 			additionalTablesCfg.TableMappings = append(cfg.TableMappings, flowConfigUpdate.AdditionalTables...)
 			additionalTablesCfg.Resync = false
-			additionalTablesCfg.SnapshotNumRowsPerPartition = state.SnapshotNumRowsPerPartition
-			additionalTablesCfg.SnapshotNumPartitionsOverride = state.SnapshotNumPartitionsOverride
-			additionalTablesCfg.SnapshotMaxParallelWorkers = state.SnapshotMaxParallelWorkers
-			additionalTablesCfg.SnapshotNumTablesInParallel = state.SnapshotNumTablesInParallel
 
 			uploadConfigToCatalog(ctx, additionalTablesCfg)
 
@@ -323,8 +322,7 @@ func processTableAdditions(
 				childAddTablesCDCFlowCtx,
 				CDCFlowWorkflow,
 				additionalTablesCfg.FlowJobName,
-				nil,
-				//state,
+				nil, // nil is passed to trigger `setup` flow.
 			)
 			addTablesSelector.AddFuture(childAddTablesCDCFlowFuture, func(f workflow.Future) {
 				addTablesFlowErr = f.Get(childAddTablesCDCFlowCtx, &res)
@@ -341,7 +339,8 @@ func processTableAdditions(
 			if state.ActiveSignal == model.ResyncSignal {
 				// additional tables should also be resynced, we don't know how much was done so far
 				//state.SyncFlowOptions.TableMappings = append(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables...)
-				resyncCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state)
+				resyncCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
+				state.DropFlowInput.FlowJobName = resyncCfg.FlowJobName
 				state.DropFlowInput.FlowConnectionConfigs = resyncCfg
 			}
 			return workflow.NewContinueAsNewError(ctx, DropFlowWorkflow, state.DropFlowInput)
@@ -496,8 +495,6 @@ func addCdcPropertiesSignalListener(
 		// do this irrespective of additional tables being present, for auto unpausing
 		state.FlowConfigUpdate = cdcConfigUpdate
 		logger.Info("CDC Signal received",
-			slog.Uint64("BatchSize", uint64(state.SyncFlowOptions.BatchSize)),
-			slog.Uint64("IdleTimeout", state.SyncFlowOptions.IdleTimeoutSeconds),
 			slog.Any("AdditionalTables", cdcConfigUpdate.AdditionalTables),
 			slog.Any("RemovedTables", cdcConfigUpdate.RemovedTables),
 			slog.Any("UpdatedEnv", cdcConfigUpdate.UpdatedEnv),
@@ -556,7 +553,7 @@ func CDCFlowWorkflow(
 			switch val.RequestedFlowState {
 			case protos.FlowStatus_STATUS_TERMINATING:
 				state.ActiveSignal = model.TerminateSignal
-				dropCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state)
+				dropCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
 				state.DropFlowInput = &protos.DropFlowInput{
 					FlowJobName:           dropCfg.FlowJobName,
 					FlowConnectionConfigs: dropCfg,
@@ -567,7 +564,7 @@ func CDCFlowWorkflow(
 				state.ActiveSignal = model.ResyncSignal
 				cfg.Resync = true
 				cfg.DoInitialSnapshot = true
-				resyncCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state)
+				resyncCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
 				state.DropFlowInput = &protos.DropFlowInput{
 					FlowJobName:           resyncCfg.FlowJobName,
 					FlowConnectionConfigs: resyncCfg,
@@ -613,7 +610,6 @@ func CDCFlowWorkflow(
 	}
 
 	originalRunID := workflow.GetInfo(ctx).OriginalRunID
-	state.SyncFlowOptions.NumberOfSyncs = 0 // removed feature
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -672,7 +668,7 @@ func CDCFlowWorkflow(
 				logger.Warn("pause requested during setup, ignoring")
 			case protos.FlowStatus_STATUS_TERMINATING:
 				state.ActiveSignal = model.TerminateSignal
-				dropCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state)
+				dropCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
 				state.DropFlowInput = &protos.DropFlowInput{
 					FlowJobName:           dropCfg.FlowJobName,
 					FlowConnectionConfigs: dropCfg,
@@ -958,7 +954,7 @@ func CDCFlowWorkflow(
 		switch val.RequestedFlowState {
 		case protos.FlowStatus_STATUS_TERMINATING:
 			state.ActiveSignal = model.TerminateSignal
-			dropCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state)
+			dropCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
 			state.DropFlowInput = &protos.DropFlowInput{
 				FlowJobName:           dropCfg.FlowJobName,
 				FlowConnectionConfigs: dropCfg,
@@ -969,7 +965,7 @@ func CDCFlowWorkflow(
 			state.ActiveSignal = model.ResyncSignal
 			cfg.Resync = true
 			cfg.DoInitialSnapshot = true
-			resyncCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state)
+			resyncCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
 			state.DropFlowInput = &protos.DropFlowInput{
 				FlowJobName:           resyncCfg.FlowJobName,
 				FlowConnectionConfigs: resyncCfg,
