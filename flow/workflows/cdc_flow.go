@@ -194,7 +194,17 @@ func processCDCFlowConfigUpdate(
 		}
 	}
 
-	syncStateToConfigProtoInCatalog(ctx, cfg, state)
+	freshCfg, _ := internal.FetchConfigFromDB(cfg.FlowJobName)
+
+	slog.Info(
+		"!!!! CDCFlowConfigUpdate processed successfully",
+		slog.Any("updatedState", flowConfigUpdate),
+		slog.Any("currentState", state),
+		slog.Any("cfg", cfg),
+		slog.Any("freshCfg", freshCfg),
+	)
+	//TODOAS: not needed to do this here, as the state is already updated.
+	//syncStateToConfigProtoInCatalog(ctx, cfg, state)
 	return nil
 }
 
