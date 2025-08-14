@@ -178,8 +178,6 @@ func processCDCFlowConfigUpdate(
 		slog.Any("cfg", cfg),
 		slog.Any("freshCfg", freshCfg),
 	)
-	//TODOAS: not needed to do this here, as the state is already updated.
-	//syncStateToConfigProtoInCatalog(ctx, cfg, state)
 	return nil
 }
 
@@ -312,17 +310,6 @@ func processTableAdditions(
 		}
 	}
 
-	//maps.Copy(state.SyncFlowOptions.SrcTableIdNameMapping, res.SyncFlowOptions.SrcTableIdNameMapping)
-	// TODOAS: this is now a problem, as it means I do not have the new src table mapping.
-	//for k, v := range res.SyncFlowOptions.SrcTableIdNameMapping {
-	//cfg.SrcTableIdNameMapping[k] = v
-	//}
-
-	//TODOAS: here we will also store the table mappings in the state.
-	//uploadConfigToCatalog(ctx, cfg)
-
-	//TOODAS: no need to have the table mappings in the sync flow options.
-	//state.SyncFlowOptions.TableMappings = append(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables...)
 	logger.Info("additional tables added to sync flow")
 	return nil
 }
@@ -536,14 +523,9 @@ func CDCFlowWorkflow(
 		// if resync is true, alter the table name schema mapping to temporarily add
 		// a suffix to the table names.
 		if cfg.Resync {
-			//for _, mapping := range state.SyncFlowOptions.TableMappings {
-			//if mapping.Engine != protos.TableEngine_CH_ENGINE_NULL {
-			//mapping.DestinationTableIdentifier += "_resync"
-			//}
-			//}
-			// because we have renamed the tables.
-			// TODOAS: this will need to be resolved somehow
-			//cfg.TableMappings = state.SyncFlowOptions.TableMappings
+			// TODOAS: this will need to be resolved somehow, as we cannot pass all of
+			// table mappings.
+
 		}
 
 		// start the SetupFlow workflow as a child workflow, and wait for it to complete
@@ -619,11 +601,11 @@ func CDCFlowWorkflow(
 		//state.SyncFlowOptions.SrcTableIdNameMapping = setupFlowOutput.SrcTableIdNameMapping
 		state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_SNAPSHOT)
 
-		//TODOAS: check this.
 		if cfg.SrcTableIdNameMapping == nil {
 			cfg.SrcTableIdNameMapping = make(map[uint32]string, len(setupFlowOutput.SrcTableIdNameMapping))
 		}
-		// list of table names which are in cfg but not in the setupFlowOutput
+		// list of table names which are in cfg but not in the setupFlowOutput; are
+		// the ones which have been added to the flow.
 
 		var newTables []string
 
@@ -649,8 +631,8 @@ func CDCFlowWorkflow(
 
 		slog.Info("!!!!! computed additional tables", slog.Any("additionalTables", additionalTables))
 
-		maps.Copy(cfg.SrcTableIdNameMapping, setupFlowOutput.SrcTableIdNameMapping)
 		//TODOAS: here we will also store the table mappings in the state.
+		maps.Copy(cfg.SrcTableIdNameMapping, setupFlowOutput.SrcTableIdNameMapping)
 		uploadConfigToCatalog(ctx, cfg)
 
 		// next part of the setup is to snapshot-initial-copy and setup replication slots.
@@ -674,7 +656,9 @@ func CDCFlowWorkflow(
 		// during any operation that triggers another snapshot (INCLUDING add tables).
 		// this could fail for very weird Temporal resets
 
-		///TODOAS : this will snapshot ALL Tables it cannot tell which ones are new.
+		// TODOAS : this will send the additionalTables to `temporal`, meaning
+		// that we cannot add too many tables at once, or we risk the blob is too
+		// large (2MB limit).
 		snapshotFlowFuture := workflow.ExecuteChildWorkflow(
 			snapshotFlowCtx,
 			SnapshotFlowWorkflow,
