@@ -318,8 +318,6 @@ func (a *FlowableActivity) SyncFlow(
 	var syncState atomic.Pointer[string]
 	syncState.Store(shared.Ptr("setup"))
 
-	slog.Info("!!!!! SyncFlow start: fetched flow config from catalog")
-
 	config, err := internal.FetchConfigFromDB(config.FlowJobName)
 	if err != nil {
 		return fmt.Errorf("unable to query flow config from catalog: %w", err)
@@ -399,7 +397,7 @@ func (a *FlowableActivity) SyncFlow(
 			syncResponse, syncErr = a.syncRecords(groupCtx, config, options, srcConn.(connectors.CDCPullConnector),
 				normRequests, &syncingBatchID, &syncState)
 		} else {
-			syncResponse, syncErr = a.syncPg(groupCtx, config, options, srcConn.(connectors.CDCPullPgConnector),
+			syncResponse, syncErr = a.syncPg(groupCtx, config, srcConn.(connectors.CDCPullPgConnector),
 				normRequests, &syncingBatchID, &syncState)
 		}
 
@@ -477,7 +475,7 @@ func (a *FlowableActivity) syncRecords(
 			return stream, nil
 		}
 	}
-	return syncCore(ctx, a, config, options, srcConn, normRequests,
+	return syncCore(ctx, a, config, srcConn, normRequests,
 		syncingBatchID, syncWaiting, adaptStream,
 		connectors.CDCPullConnector.PullRecords,
 		connectors.CDCSyncConnector.SyncRecords)
@@ -486,13 +484,12 @@ func (a *FlowableActivity) syncRecords(
 func (a *FlowableActivity) syncPg(
 	ctx context.Context,
 	config *protos.FlowConnectionConfigs,
-	options *protos.SyncFlowOptions,
 	srcConn connectors.CDCPullPgConnector,
 	normRequests chan<- NormalizeBatchRequest,
 	syncingBatchID *atomic.Int64,
 	syncWaiting *atomic.Pointer[string],
 ) (*model.SyncResponse, error) {
-	return syncCore(ctx, a, config, options, srcConn, normRequests,
+	return syncCore(ctx, a, config, srcConn, normRequests,
 		syncingBatchID, syncWaiting, nil,
 		connectors.CDCPullPgConnector.PullPg,
 		connectors.CDCSyncPgConnector.SyncPg)

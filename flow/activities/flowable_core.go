@@ -110,7 +110,6 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 	ctx context.Context,
 	a *FlowableActivity,
 	config *protos.FlowConnectionConfigs,
-	options *protos.SyncFlowOptions,
 	srcConn TPull,
 	normRequests chan<- NormalizeBatchRequest,
 	syncingBatchID *atomic.Int64,
