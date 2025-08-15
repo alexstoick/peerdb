@@ -74,10 +74,6 @@ func (h *FlowRequestHandler) createCdcJobEntry(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("unable to marshal flow config: %w", err)
 	}
-
-	slog.Warn("!!!! IN CDC JOB ENTRY", slog.Any("connConfigs", req.ConnectionConfigs))
-
-	slog.Warn("!!!! IN CDC JOB ENTRY")
 	if _, err := h.pool.Exec(ctx,
 		`INSERT INTO flows (workflow_id, name, source_peer, destination_peer, config_proto, status,
 		description, source_table_identifier, destination_table_identifier) VALUES ($1,$2,$3,$4,$5,$6,'gRPC','','')`,
@@ -157,8 +153,6 @@ func (h *FlowRequestHandler) CreateCDCFlow(
 		return nil, fmt.Errorf("unable to create flow job entry: %w", err)
 	}
 
-	// TODO: fix here.
-	slog.Warn("!!!! CreateCDCFlow CALLED")
 	// clear the table mappings; we are pulling them from the DB.
 	cfg.TableMappings = []*protos.TableMapping{}
 
