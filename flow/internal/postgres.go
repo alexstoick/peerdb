@@ -45,8 +45,6 @@ func UpdateCDCConfigInCatalog(ctx context.Context, pool shared.CatalogPool,
 		return fmt.Errorf("unable to marshal flow config: %w", err)
 	}
 
-	slog.Info("updating catalog with config_proto", slog.String("flowName", cfg.FlowJobName), slog.Any("config", cfg))
-
 	if _, err := pool.Exec(ctx, "UPDATE flows SET config_proto=$1,updated_at=now() WHERE name=$2", cfgBytes, cfg.FlowJobName); err != nil {
 		logger.Error("failed to update catalog", slog.Any("error", err), slog.String("flowName", cfg.FlowJobName))
 		return fmt.Errorf("failed to update catalog: %w", err)

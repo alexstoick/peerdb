@@ -3,7 +3,6 @@ package connpostgres
 import (
 	"context"
 	"crypto/tls"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,7 +20,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/PeerDB-io/peerdb/flow/alerting"
 	"github.com/PeerDB-io/peerdb/flow/connectors/utils"
@@ -450,23 +448,9 @@ func pullCore[Items model.Items](
 		return fmt.Errorf("failed to get get setting for originMetaAsDestinationColumn: %w", err)
 	}
 
-	slog.Info("!!!! PULL RECORDS")
-	slog.Info("!!!! tableNaming")
-
-	var configBytes sql.RawBytes
-	if err := catalogPool.QueryRow(ctx,
-		"SELECT config_proto FROM flows WHERE name = $1 LIMIT 1", req.FlowJobName,
-	).Scan(&configBytes); err != nil {
-		slog.Error("unable to query flow config from catalog", slog.Any("error", err))
+	cfgFromDB, err := internal.FetchConfigFromDB(req.FlowJobName)
+	if err != nil {
 		return fmt.Errorf("unable to query flow config from catalog: %w", err)
-	}
-
-	slog.Info("!!!!! pullCore MIDDLE: fetched flow config from catalog")
-	fmt.Printf("!!!!!!!!!! %+v\n", req)
-	var cfgFromDB protos.FlowConnectionConfigs
-	if err := proto.Unmarshal(configBytes, &cfgFromDB); err != nil {
-		slog.Error("unable to unmarshal flow config", slog.Any("error", err))
-		return fmt.Errorf("unable to unmarshal flow config: %w", err)
 	}
 
 	cdc, err := c.NewPostgresCDCSource(ctx, &PostgresCDCConfig{

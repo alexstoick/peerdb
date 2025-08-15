@@ -135,16 +135,7 @@ func processCDCFlowConfigUpdate(
 		}
 		maps.Copy(cfg.Env, flowConfigUpdate.UpdatedEnv)
 	}
-	// Update the flowConfig settings into the DB.
-	slog.Info("!!!!!!!! SETTING STATE IN DB BEFORE ADDING TABLES",
-		slog.Any("flowConfigUpdate", state.FlowConfigUpdate),
-		slog.Any("cfg", cfg),
-	)
 	cfg = syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
-
-	slog.Info("!!!!!!!! UPDATED STATE IN DB BEFORE ADDING TABLES",
-		slog.Any("cfg", cfg),
-	)
 
 	tablesAreAdded := len(flowConfigUpdate.AdditionalTables) > 0
 	tablesAreRemoved := len(flowConfigUpdate.RemovedTables) > 0
@@ -168,15 +159,6 @@ func processCDCFlowConfigUpdate(
 		}
 	}
 
-	freshCfg, _ := internal.FetchConfigFromDB(cfg.FlowJobName)
-
-	slog.Info(
-		"!!!! CDCFlowConfigUpdate processed successfully",
-		slog.Any("updatedState", flowConfigUpdate),
-		slog.Any("currentState", state),
-		slog.Any("cfg", cfg),
-		slog.Any("freshCfg", freshCfg),
-	)
 	return nil
 }
 
@@ -311,10 +293,6 @@ func processTableAdditions(
 				WaitForCancellation:   true,
 			}
 			childAddTablesCDCFlowCtx := workflow.WithChildOptions(ctx, childAddTablesCDCFlowOpts)
-			slog.Info("!!!!!!!!!!! Executing child CDCFlow for additional tables",
-				slog.Any("additionalTablesCfg", additionalTablesCfg),
-				slog.Any("state", state),
-			)
 
 			childAddTablesCDCFlowFuture := workflow.ExecuteChildWorkflow(
 				childAddTablesCDCFlowCtx,
@@ -738,8 +716,6 @@ func CDCFlowWorkflow(
 				additionalTables = append(additionalTables, tableMapping)
 			}
 		}
-
-		slog.Info("!!!!! computed additional tables", slog.Any("additionalTables", additionalTables))
 
 		//TODOAS: here we will also store the table mappings in the state.
 		maps.Copy(cfg.SrcTableIdNameMapping, setupFlowOutput.SrcTableIdNameMapping)

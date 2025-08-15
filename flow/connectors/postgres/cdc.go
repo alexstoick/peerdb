@@ -397,9 +397,6 @@ func PullCdcRecords[Items model.Items](
 ) error {
 	logger := internal.LoggerFromCtx(ctx)
 
-	//TODO: AS: this is bad already; req is not good.
-	slog.Info("!!!! PullRecords started", slog.Any("request", req))
-
 	// use only with taking replLock
 	conn := p.replConn.PgConn()
 	sendStandbyAfterReplLock := func(updateType string) error {
