@@ -187,18 +187,17 @@ message FieldDescription {
 }
 
 message SetupTableSchemaBatchInput {
-  reserved 2;
+  reserved 2,6;
   map<string, string> env = 1;
   string flow_name = 3;
   TypeSystem system = 4;
   string peer_name = 5;
-  repeated TableMapping table_mappings = 6;
   uint32 version = 7;
 }
 
 message SetupNormalizedTableBatchInput {
+  reserved 3;
   map<string, string> env = 1;
-  repeated TableMapping table_mappings = 3;
 
   // migration related columns
   string soft_delete_col_name = 4;
