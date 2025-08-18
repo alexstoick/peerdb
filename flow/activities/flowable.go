@@ -182,6 +182,11 @@ func (a *FlowableActivity) SetupTableSchema(
 		return a.Alerter.LogFlowError(ctx, config.FlowName, fmt.Errorf("failed to fetch config from DB: %w", err))
 	}
 	tableMappings := cfg.TableMappings
+	if len(config.FilteredTableMappings) > 0 {
+		// we use the filtered table mappings if provided. they are provided from
+		// the sync flow which includes changes to the schema.
+		tableMappings = config.FilteredTableMappings
+	}
 
 	logger := internal.LoggerFromCtx(ctx)
 	ctx = context.WithValue(ctx, shared.FlowNameKey, config.FlowName)

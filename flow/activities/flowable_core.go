@@ -93,12 +93,12 @@ func (a *FlowableActivity) applySchemaDeltas(
 
 	if len(schemaDeltas) > 0 {
 		if err := a.SetupTableSchema(ctx, &protos.SetupTableSchemaBatchInput{
-			PeerName:      config.SourceName,
-			TableMappings: filteredTableMappings,
-			FlowName:      config.FlowJobName,
-			System:        config.System,
-			Env:           config.Env,
-			Version:       config.Version,
+			PeerName:              config.SourceName,
+			FilteredTableMappings: filteredTableMappings,
+			FlowName:              config.FlowJobName,
+			System:                config.System,
+			Env:                   config.Env,
+			Version:               config.Version,
 		}); err != nil {
 			return a.Alerter.LogFlowError(ctx, config.FlowJobName, fmt.Errorf("failed to execute schema update at source: %w", err))
 		}
@@ -122,13 +122,9 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 	ctx = context.WithValue(ctx, shared.FlowNameKey, flowName)
 	logger := internal.LoggerFromCtx(ctx)
 
-	cfgFromDB, err := internal.FetchConfigFromDB(flowName)
-	if err != nil {
-		return nil, fmt.Errorf("unable to query flow config from catalog: %w", err)
-	}
-
-	tblNameMapping := make(map[string]model.NameAndExclude, len(cfgFromDB.TableMappings))
-	for _, v := range cfgFromDB.TableMappings {
+	// we should be able to rely on `config` here.
+	tblNameMapping := make(map[string]model.NameAndExclude, len(config.TableMappings))
+	for _, v := range config.TableMappings {
 		tblNameMapping[v.SourceTableIdentifier] = model.NewNameAndExclude(v.DestinationTableIdentifier, v.Exclude)
 	}
 
@@ -186,7 +182,7 @@ func syncCore[TPull connectors.CDCPullConnectorCore, TSync connectors.CDCSyncCon
 	errGroup.Go(func() error {
 		return pull(srcConn, errCtx, a.CatalogPool, a.OtelManager, &model.PullRecordsRequest[Items]{
 			FlowJobName:           flowName,
-			SrcTableIDNameMapping: cfgFromDB.SrcTableIdNameMapping,
+			SrcTableIDNameMapping: config.SrcTableIdNameMapping,
 			TableNameMapping:      tblNameMapping,
 			LastOffset:            lastOffset,
 			ConsumedOffset:        &consumedOffset,

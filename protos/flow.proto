@@ -193,11 +193,12 @@ message SetupTableSchemaBatchInput {
   TypeSystem system = 4;
   string peer_name = 5;
   uint32 version = 7;
+  repeated TableMapping filtered_table_mappings = 8;
 }
 
 message SetupNormalizedTableBatchInput {
-  reserved 3;
   map<string, string> env = 1;
+  repeated TableMapping table_mappings = 3;
 
   // migration related columns
   string soft_delete_col_name = 4;

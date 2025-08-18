@@ -198,12 +198,11 @@ func (s *SetupFlowExecution) setupNormalizedTables(
 	})
 
 	tableSchemaInput := &protos.SetupTableSchemaBatchInput{
-		PeerName:      flowConnectionConfigs.SourceName,
-		TableMappings: []*protos.TableMapping{},
-		FlowName:      s.cdcFlowName,
-		System:        flowConnectionConfigs.System,
-		Env:           flowConnectionConfigs.Env,
-		Version:       flowConnectionConfigs.Version,
+		PeerName: flowConnectionConfigs.SourceName,
+		FlowName: s.cdcFlowName,
+		System:   flowConnectionConfigs.System,
+		Env:      flowConnectionConfigs.Env,
+		Version:  flowConnectionConfigs.Version,
 	}
 
 	if err := workflow.ExecuteActivity(ctx, flowable.SetupTableSchema, tableSchemaInput).Get(ctx, nil); err != nil {
@@ -214,7 +213,6 @@ func (s *SetupFlowExecution) setupNormalizedTables(
 	s.Info("setting up normalized tables on destination peer", slog.String("destination", flowConnectionConfigs.DestinationName))
 	setupConfig := &protos.SetupNormalizedTableBatchInput{
 		PeerName:          flowConnectionConfigs.DestinationName,
-		TableMappings:     []*protos.TableMapping{},
 		SoftDeleteColName: flowConnectionConfigs.SoftDeleteColName,
 		SyncedAtColName:   flowConnectionConfigs.SyncedAtColName,
 		FlowName:          flowConnectionConfigs.FlowJobName,
