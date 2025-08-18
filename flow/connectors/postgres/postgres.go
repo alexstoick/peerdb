@@ -440,6 +440,7 @@ func pullCore[Items model.Items](
 		return fmt.Errorf("failed to get get setting for handleInheritanceForNonPartitionedTables: %w", err)
 	}
 	sourceSchemaAsDestinationColumn, err := internal.PeerDBSourceSchemaAsDestinationColumn(ctx, req.Env)
+	slog.Info("!!!!!! sourceSchemaAsDestinationColumn", slog.Bool("value", sourceSchemaAsDestinationColumn))
 	if err != nil {
 		return fmt.Errorf("failed to get get setting for sourceSchemaAsDestinationColumn: %w", err)
 	}

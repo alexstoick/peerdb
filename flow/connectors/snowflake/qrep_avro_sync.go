@@ -103,6 +103,8 @@ func (s *SnowflakeAvroSyncHandler) SyncQRepRecords(
 	}
 	s.logger.Info("sync function called and schema acquired", partitionLog)
 
+	slog.Info("!!!! snowflake QRep sync function called", slog.Any("config", config))
+
 	avroSchema, err := s.getAvroSchema(ctx, config.Env, dstTableName, schema)
 	if err != nil {
 		return 0, nil, err

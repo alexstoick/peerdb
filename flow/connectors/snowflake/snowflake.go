@@ -542,6 +542,7 @@ func (c *SnowflakeConnector) mergeTablesForBatch(
 
 		g.Go(func() error {
 			mergeStatement, err := mergeGen.generateMergeStmt(gCtx, env, tableName)
+			slog.Info("generated merge statement", slog.Any("!!!! mergeStatement", mergeStatement))
 			if err != nil {
 				return err
 			}
@@ -688,6 +689,12 @@ func generateCreateTableSQLForNormalizedTable(
 	// default value is the current timestamp (snowflake)
 	if config.SyncedAtColName != "" {
 		createTableSQLArray = append(createTableSQLArray, config.SyncedAtColName+" TIMESTAMP DEFAULT SYSDATE()")
+	}
+
+	//TODOAS: check error here.
+	sourceSchemaAsDestinationColumn, _ := internal.PeerDBSourceSchemaAsDestinationColumn(ctx, config.Env)
+	if sourceSchemaAsDestinationColumn {
+		createTableSQLArray = append(createTableSQLArray, "_peerdb_source_schema"+" VARCHAR(256)")
 	}
 
 	// add composite primary key to the table

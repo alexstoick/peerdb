@@ -77,7 +77,7 @@ func (s *SnowflakeAvroConsolidateHandler) CopyStageToDestination(ctx context.Con
 	return nil
 }
 
-func getTransformSQL(colNames []string, colTypes []string, syncedAtCol string, isDeletedCol string) (string, string) {
+func getTransformSQL(colNames []string, colTypes []string, syncedAtCol string, isDeletedCol string, sourceSchema string) (string, string) {
 	transformations := make([]string, 0, len(colNames))
 	columnOrder := make([]string, 0, len(colNames))
 	for idx, avroColName := range colNames {
@@ -91,6 +91,11 @@ func getTransformSQL(colNames []string, colTypes []string, syncedAtCol string, i
 
 		if avroColName == isDeletedCol {
 			transformations = append(transformations, "FALSE AS "+normalizedColName)
+			continue
+		}
+
+		if avroColName == "_peerdb_source_schema" {
+			transformations = append(transformations, fmt.Sprintf("'%s' AS _peerdb_source_schema", sourceSchema))
 			continue
 		}
 
@@ -131,16 +136,23 @@ func getTransformSQL(colNames []string, colTypes []string, syncedAtCol string, i
 
 // copy to either the actual destination table or a tempTable
 func (s *SnowflakeAvroConsolidateHandler) getCopyTransformation(copyDstTable string) string {
+	//sourceSchemaAsDestinationColumn := true //TODOAS: fix this internal.PeerDBSourceSchemaAsDestinationColumn(s|ctx, req.Env)
 	transformationSQL, columnsSQL := getTransformSQL(
 		s.allColNames,
 		s.allColTypes,
 		s.config.SyncedAtColName,
 		s.config.SoftDeleteColName,
+		//sourceSchemaAsDestinationColumn,
+		strings.Split(s.config.WatermarkTable, ".")[0],
 	)
+
+	slog.Info("transomation & columns", slog.String("transformationSQL", transformationSQL),
+		slog.Any("columnsSQL", columnsSQL))
 	onErrorStr := ""
 	if onError := internal.GetEnvString("PEERDB_SNOWFLAKE_ON_ERROR", ""); onError != "" {
 		onErrorStr = ", ON_ERROR=" + onError
 	}
+	//TODO: LEAVE PURGE FALSE
 	return fmt.Sprintf("COPY INTO %s(%s) FROM (SELECT %s FROM @%s) FILE_FORMAT=(TYPE=AVRO), PURGE=TRUE%s",
 		copyDstTable, columnsSQL, transformationSQL, s.stage, onErrorStr)
 }
@@ -148,7 +160,7 @@ func (s *SnowflakeAvroConsolidateHandler) getCopyTransformation(copyDstTable str
 func (s *SnowflakeAvroConsolidateHandler) handleAppendMode(ctx context.Context) error {
 	parsedDstTable, _ := utils.ParseSchemaTable(s.dstTableName)
 	copyCmd := s.getCopyTransformation(snowflakeSchemaTableNormalize(parsedDstTable))
-	s.connector.logger.Info("running copy command: " + copyCmd)
+	s.connector.logger.Info("!!! APPEND MODE: running copy command: " + copyCmd)
 	if _, err := s.connector.ExecContext(ctx, copyCmd); err != nil {
 		return fmt.Errorf("failed to run COPY INTO command: %w", err)
 	}
@@ -225,6 +237,7 @@ func (s *SnowflakeAvroConsolidateHandler) handleUpsertMode(ctx context.Context) 
 	}
 	s.connector.logger.Info("created temp table " + tempTableName)
 
+	slog.Info("!!!! getting copy transformation for temp table", slog.String("tempTableName", tempTableName))
 	copyCmd := s.getCopyTransformation(tempTableName)
 
 	if _, err := s.connector.ExecContext(ctx, copyCmd); err != nil {

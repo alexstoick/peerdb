@@ -288,6 +288,7 @@ func processTuple[Items model.Items](
 		}
 	}
 
+	slog.Info("!!! processTuple", slog.Any("schemaName", schemaName))
 	if schemaName != "" {
 		processor.AddStringColumn(items, "_peerdb_source_schema", schemaName)
 	}
@@ -836,6 +837,7 @@ func processInsertMessage[Items model.Items](
 	}
 
 	schemaName, err := p.getSourceSchemaForDestinationColumn(relID, tableName)
+	slog.Info("!!! processUpdateMessage", slog.Any("schemaName", schemaName))
 	if err != nil {
 		return nil, err
 	}
@@ -878,6 +880,7 @@ func processUpdateMessage[Items model.Items](
 	}
 
 	schemaName, err := p.getSourceSchemaForDestinationColumn(relID, tableName)
+	slog.Info("!!! processUpdateMessage", slog.Any("schemaName", schemaName))
 	if err != nil {
 		return nil, err
 	}
@@ -941,6 +944,7 @@ func processDeleteMessage[Items model.Items](
 	}
 
 	schemaName, err := p.getSourceSchemaForDestinationColumn(relID, tableName)
+	slog.Info("!!! processUpdateMessage", slog.Any("schemaName", schemaName))
 	if err != nil {
 		return nil, err
 	}

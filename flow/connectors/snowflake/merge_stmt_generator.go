@@ -31,6 +31,11 @@ func (m *mergeStmtGenerator) generateMergeStmt(ctx context.Context, env map[stri
 	normalizedTableSchema := m.tableSchemaMapping[dstTable]
 	unchangedToastColumns := m.unchangedToastColumnsMap[dstTable]
 	columns := normalizedTableSchema.Columns
+	sourceSchemaCol := &protos.FieldDescription{
+		Name: "_peerdb_source_schema",
+		Type: "string",
+	}
+	columns = append(columns, sourceSchemaCol)
 
 	flattenedCastsSQLArray := make([]string, 0, len(columns))
 	for _, column := range columns {
@@ -91,6 +96,19 @@ func (m *mergeStmtGenerator) generateMergeStmt(ctx context.Context, env map[stri
 		normalizedColName := SnowflakeIdentifierNormalize(column.Name)
 		insertValuesSQLArray = append(insertValuesSQLArray, "SOURCE."+normalizedColName)
 	}
+
+	//TODO: fix this
+	//sourceSchemaAsDestinationColumn, _ := internal.PeerDBSourceSchemaAsDestinationColumn(ctx, env)
+	//if sourceSchemaAsDestinationColumn || true {
+	//insertValuesSQLArray = append(insertValuesSQLArray, "SOURCE."+"_peerdb_source_schema")
+	//flattenedCastsSQLArray = append(
+	//flattenedCastsSQLArray,
+	//fmt.Sprintf(
+	//"CAST(%s:\"%s\" AS %s) AS %s",
+	//toVariantColumnName, "_peerdb_source_schema", "STRING", "_peerdb_source_schema",
+	//),
+	//)
+	//}
 	if m.peerdbCols.SyncedAtColName != "" {
 		// fill in synced_at column
 		insertValuesSQLArray = append(insertValuesSQLArray, "CURRENT_TIMESTAMP")
