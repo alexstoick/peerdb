@@ -5,8 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/PeerDB-io/peerdb/flow/generated/protos"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/PeerDB-io/peerdb/flow/generated/protos"
 )
 
 func TableNameMapping(tableMappings []*protos.TableMapping) map[string]string {

@@ -215,11 +215,6 @@ func processTableAdditions(
 		syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
 		return nil
 	}
-	//if internal.AdditionalTablesHasOverlap(cfg.TableMappings, flowConfigUpdate.AdditionalTables) {
-	//logger.Warn("duplicate source/destination tables found in additionalTables")
-	//syncStateToConfigProtoInCatalog(ctx, cfg, state)
-	//return nil
-	//}
 	state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_SNAPSHOT)
 
 	addTablesSelector := workflow.NewNamedSelector(ctx, "AddTables")
@@ -248,7 +243,7 @@ func processTableAdditions(
 			// TODOAS: should the `doInitialSnapshot` just come from cfg?
 			additionalTablesCfg.DoInitialSnapshot = true
 			additionalTablesCfg.InitialSnapshotOnly = true
-			additionalTablesCfg.TableMappings = append(cfg.TableMappings, flowConfigUpdate.AdditionalTables...)
+			additionalTablesCfg.TableMappings = append(additionalTablesCfg.TableMappings, flowConfigUpdate.AdditionalTables...)
 			additionalTablesCfg.Resync = false
 
 			uploadConfigToCatalog(ctx, additionalTablesCfg)
@@ -278,14 +273,14 @@ func processTableAdditions(
 	})
 
 	// additional tables should also be resynced, we don't know how much was done so far
-	//state.SyncFlowOptions.TableMappings = append(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables...)
+	// state.SyncFlowOptions.TableMappings = append(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables...)
 
 	for res == nil {
 		addTablesSelector.Select(ctx)
 		if state.ActiveSignal == model.TerminateSignal || state.ActiveSignal == model.ResyncSignal {
 			if state.ActiveSignal == model.ResyncSignal {
 				// additional tables should also be resynced, we don't know how much was done so far
-				//state.SyncFlowOptions.TableMappings = append(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables...)
+				// state.SyncFlowOptions.TableMappings = append(state.SyncFlowOptions.TableMappings, flowConfigUpdate.AdditionalTables...)
 				resyncCfg := syncStateToConfigProtoInCatalog(ctx, cfg, state.FlowConfigUpdate)
 				state.DropFlowInput.FlowJobName = resyncCfg.FlowJobName
 				state.DropFlowInput.FlowConnectionConfigs = resyncCfg
@@ -428,7 +423,7 @@ func addCdcPropertiesSignalListener(
 func CDCFlowWorkflow(
 	ctx workflow.Context,
 	flowJobName string,
-	//cfg *protos.FlowConnectionConfigs,
+	// cfg *protos.FlowConnectionConfigs,
 	state *CDCFlowWorkflowState,
 ) (*CDCFlowWorkflowResult, error) {
 	cfg, err := internal.FetchConfigFromDB(flowJobName)
@@ -557,7 +552,7 @@ func CDCFlowWorkflow(
 	// for safety, rely on the idempotency of SetupFlow instead
 	// also, no signals are being handled until the loop starts, so no PAUSE/DROP will take here.
 	if state.CurrentFlowStatus != protos.FlowStatus_STATUS_RUNNING {
-		//have to get cfg from DB.
+		// have to get cfg from DB.
 		originalTableMappings := make([]*protos.TableMapping, 0, len(cfg.TableMappings))
 		for _, tableMapping := range cfg.TableMappings {
 			originalTableMappings = append(originalTableMappings, proto.CloneOf(tableMapping))
@@ -565,9 +560,9 @@ func CDCFlowWorkflow(
 		// if resync is true, alter the table name schema mapping to temporarily add
 		// a suffix to the table names.
 		if cfg.Resync {
+			return nil, errors.New("cannot start CDCFlow with Resync enabled, please drop the flow and start again")
 			// TODOAS: this will need to be resolved somehow, as we cannot pass all of
 			// table mappings.
-
 		}
 
 		// start the SetupFlow workflow as a child workflow, and wait for it to complete
@@ -640,7 +635,6 @@ func CDCFlowWorkflow(
 			}
 		}
 
-		//state.SyncFlowOptions.SrcTableIdNameMapping = setupFlowOutput.SrcTableIdNameMapping
 		state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_SNAPSHOT)
 
 		if cfg.SrcTableIdNameMapping == nil {
@@ -671,7 +665,7 @@ func CDCFlowWorkflow(
 			}
 		}
 
-		//TODOAS: here we will also store the table mappings in the state.
+		// TODOAS: here we will also store the table mappings in the state.
 		maps.Copy(cfg.SrcTableIdNameMapping, setupFlowOutput.SrcTableIdNameMapping)
 		uploadConfigToCatalog(ctx, cfg)
 

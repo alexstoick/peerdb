@@ -399,7 +399,7 @@ func (a *FlowableActivity) SyncFlow(
 		var syncResponse *model.SyncResponse
 		var syncErr error
 		if config.System == protos.TypeSystem_Q {
-			syncResponse, syncErr = a.syncRecords(groupCtx, config, options, srcConn.(connectors.CDCPullConnector),
+			syncResponse, syncErr = a.syncRecords(groupCtx, config, srcConn.(connectors.CDCPullConnector),
 				normRequests, &syncingBatchID, &syncState)
 		} else {
 			syncResponse, syncErr = a.syncPg(groupCtx, config, srcConn.(connectors.CDCPullPgConnector),
@@ -445,7 +445,6 @@ func (a *FlowableActivity) SyncFlow(
 func (a *FlowableActivity) syncRecords(
 	ctx context.Context,
 	config *protos.FlowConnectionConfigs,
-	options *protos.SyncFlowOptions,
 	srcConn connectors.CDCPullConnector,
 	normRequests chan<- NormalizeBatchRequest,
 	syncingBatchID *atomic.Int64,

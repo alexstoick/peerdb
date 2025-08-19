@@ -38,14 +38,6 @@ type SetupFlowExecution struct {
 	executionID string
 }
 
-func (s SetupFlowExecution) TableNameMapping(tableMappings []*protos.TableMapping) map[string]string {
-	tblNameMapping := make(map[string]string, len(tableMappings))
-	for _, v := range tableMappings {
-		tblNameMapping[v.SourceTableIdentifier] = v.DestinationTableIdentifier
-	}
-	return tblNameMapping
-}
-
 // NewSetupFlowExecution creates a new instance of SetupFlowExecution.
 func NewSetupFlowExecution(ctx workflow.Context, cdcFlowName string) *SetupFlowExecution {
 	return &SetupFlowExecution{
@@ -53,6 +45,14 @@ func NewSetupFlowExecution(ctx workflow.Context, cdcFlowName string) *SetupFlowE
 		cdcFlowName: cdcFlowName,
 		executionID: workflow.GetInfo(ctx).WorkflowExecution.ID,
 	}
+}
+
+func (s *SetupFlowExecution) TableNameMapping(tableMappings []*protos.TableMapping) map[string]string {
+	tblNameMapping := make(map[string]string, len(tableMappings))
+	for _, v := range tableMappings {
+		tblNameMapping[v.SourceTableIdentifier] = v.DestinationTableIdentifier
+	}
+	return tblNameMapping
 }
 
 // checkConnectionsAndSetupMetadataTables checks the connections to the source and destination peers
