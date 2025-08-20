@@ -47,14 +47,6 @@ func NewSetupFlowExecution(ctx workflow.Context, cdcFlowName string) *SetupFlowE
 	}
 }
 
-func (s *SetupFlowExecution) TableNameMapping(tableMappings []*protos.TableMapping) map[string]string {
-	tblNameMapping := make(map[string]string, len(tableMappings))
-	for _, v := range tableMappings {
-		tblNameMapping[v.SourceTableIdentifier] = v.DestinationTableIdentifier
-	}
-	return tblNameMapping
-}
-
 // checkConnectionsAndSetupMetadataTables checks the connections to the source and destination peers
 // and ensures that the metadata tables are setup.
 func (s *SetupFlowExecution) checkConnectionsAndSetupMetadataTables(
@@ -171,7 +163,7 @@ func (s *SetupFlowExecution) createRawTable(
 	createRawTblInput := &protos.CreateRawTableInput{
 		PeerName:         config.DestinationName,
 		FlowJobName:      s.cdcFlowName,
-		TableNameMapping: s.TableNameMapping(config.TableMappings),
+		TableNameMapping: internal.TableNameMapping(config.TableMappings),
 	}
 
 	rawTblFuture := workflow.ExecuteActivity(ctx, flowable.CreateRawTable, createRawTblInput)

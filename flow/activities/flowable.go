@@ -1236,7 +1236,7 @@ func (a *FlowableActivity) AddTablesToPublication(ctx context.Context, flowJobNa
 ) error {
 	cfg, err := internal.FetchConfigFromDB(flowJobName)
 	if err != nil {
-		return errors.New("invalid connection configs")
+		return fmt.Errorf("unable to query flow config from catalog: %w", err)
 	}
 	ctx = context.WithValue(ctx, shared.FlowNameKey, cfg.FlowJobName)
 	srcConn, err := connectors.GetByNameAs[*connpostgres.PostgresConnector](ctx, cfg.Env, a.CatalogPool, cfg.SourceName)

@@ -94,8 +94,7 @@ func (c *ClickHouseConnector) generateCreateTableSQLForNormalizedTable(
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch config from DB: %w", err)
 	}
-	tableMappings := cfg.TableMappings
-	for _, tm := range tableMappings {
+	for _, tm := range cfg.TableMappings {
 		if tm.DestinationTableIdentifier == tableIdentifier {
 			tmEngine = tm.Engine
 			tableMapping = tm

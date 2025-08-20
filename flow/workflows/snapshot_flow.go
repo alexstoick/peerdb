@@ -280,14 +280,14 @@ func (s *SnapshotFlowExecution) cloneTables(
 		},
 	})
 
-	cfg, err := internal.FetchConfigFromDB(s.FlowJobName)
+	config, err := internal.FetchConfigFromDB(s.FlowJobName)
 	if err != nil {
 		return fmt.Errorf("unable to query flow config from catalog: %w", err)
 	}
 
 	var res *protos.GetDefaultPartitionKeyForTablesOutput
 	if err := workflow.ExecuteActivity(getParallelLoadKeyForTablesCtx,
-		snapshot.GetDefaultPartitionKeyForTables, cfg).Get(ctx, &res); err != nil {
+		snapshot.GetDefaultPartitionKeyForTables, config).Get(ctx, &res); err != nil {
 		return fmt.Errorf("failed to get default partition keys for tables: %w", err)
 	}
 
