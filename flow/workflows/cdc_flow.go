@@ -296,7 +296,7 @@ func processTableAdditions(
 	alterPublicationAddAdditionalTablesFuture := workflow.ExecuteActivity(
 		alterPublicationAddAdditionalTablesCtx,
 		flowable.AddTablesToPublication,
-		cfg, flowConfigUpdate.AdditionalTables)
+		internal.MinimizeFlowConfiguration(cfg), flowConfigUpdate.AdditionalTables)
 
 	var res *CDCFlowWorkflowResult
 	var addTablesFlowErr error
@@ -338,6 +338,7 @@ func processTableAdditions(
 			childAddTablesCDCFlowFuture := workflow.ExecuteChildWorkflow(
 				childAddTablesCDCFlowCtx,
 				CDCFlowWorkflow,
+				// TODO: `additonalTableCfg` this cannot be minimized in the main branch; but the limitation is minimal.
 				additionalTablesCfg,
 				nil,
 			)
@@ -412,7 +413,7 @@ func processTableRemovals(
 		rawTableCleanupFuture := workflow.ExecuteActivity(
 			removeTablesCtx,
 			flowable.RemoveTablesFromRawTable,
-			cfg, state.FlowConfigUpdate.RemovedTables)
+			internal.MinimizeFlowConfiguration(cfg), state.FlowConfigUpdate.RemovedTables)
 		removeTablesSelector.AddFuture(rawTableCleanupFuture, func(f workflow.Future) {
 			if err := f.Get(ctx, nil); err != nil {
 				logger.Error("failed to clean up raw table for removed tables", slog.Any("error", err))
@@ -424,7 +425,7 @@ func processTableRemovals(
 			removeTablesFromCatalogFuture := workflow.ExecuteActivity(
 				removeTablesCtx,
 				flowable.RemoveTablesFromCatalog,
-				cfg, state.FlowConfigUpdate.RemovedTables)
+				internal.MinimizeFlowConfiguration(cfg), state.FlowConfigUpdate.RemovedTables)
 			removeTablesSelector.AddFuture(removeTablesFromCatalogFuture, func(f workflow.Future) {
 				if err := f.Get(ctx, nil); err != nil {
 					logger.Error("failed to clean up raw table for removed tables", slog.Any("error", err))
@@ -594,7 +595,7 @@ func CDCFlowWorkflow(
 
 		logger.Info("mirror resumed", slog.Duration("after", time.Since(startTime)))
 		state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_RUNNING)
-		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg, state)
+		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, internal.MinimizeFlowConfiguration(cfg), state)
 	}
 
 	originalRunID := workflow.GetInfo(ctx).OriginalRunID
@@ -627,22 +628,6 @@ func CDCFlowWorkflow(
 	// for safety, rely on the idempotency of SetupFlow instead
 	// also, no signals are being handled until the loop starts, so no PAUSE/DROP will take here.
 	if state.CurrentFlowStatus != protos.FlowStatus_STATUS_RUNNING {
-		originalTableMappings := make([]*protos.TableMapping, 0, len(cfg.TableMappings))
-		for _, tableMapping := range cfg.TableMappings {
-			originalTableMappings = append(originalTableMappings, proto.CloneOf(tableMapping))
-		}
-		// if resync is true, alter the table name schema mapping to temporarily add
-		// a suffix to the table names.
-		if cfg.Resync {
-			for _, mapping := range state.SyncFlowOptions.TableMappings {
-				if mapping.Engine != protos.TableEngine_CH_ENGINE_NULL {
-					mapping.DestinationTableIdentifier += "_resync"
-				}
-			}
-			// because we have renamed the tables.
-			cfg.TableMappings = state.SyncFlowOptions.TableMappings
-		}
-
 		// start the SetupFlow workflow as a child workflow, and wait for it to complete
 		// it should return the table schema for the source peer
 		setupFlowID := GetChildWorkflowID("setup-flow", cfg.FlowJobName, originalRunID)
@@ -666,7 +651,6 @@ func CDCFlowWorkflow(
 				state.ActiveSignal = model.ResyncSignal
 				cfg.Resync = true
 				cfg.DoInitialSnapshot = true
-				cfg.TableMappings = originalTableMappings
 				// this is the only place where we can have a resync during a resync
 				// so we need to NOT sync the tableMappings to catalog to preserve original names
 				uploadConfigToCatalog(ctx, cfg)
@@ -690,7 +674,10 @@ func CDCFlowWorkflow(
 			WaitForCancellation:   true,
 		}
 		setupFlowCtx := workflow.WithChildOptions(ctx, childSetupFlowOpts)
-		setupFlowFuture := workflow.ExecuteChildWorkflow(setupFlowCtx, SetupFlowWorkflow, cfg)
+		// Resync will rely rely on the `cfg.Resync` flag to rename the tables
+		// during the snapshot process. This is how we're able to also remove the need
+		// to sync the config back into the DB / not rely on the `state.TableMappings`.
+		setupFlowFuture := workflow.ExecuteChildWorkflow(setupFlowCtx, SetupFlowWorkflow, internal.MinimizeFlowConfiguration(cfg))
 
 		var setupFlowOutput *protos.SetupFlowOutput
 		var setupFlowError error
@@ -826,7 +813,7 @@ func CDCFlowWorkflow(
 			logger.Info("executed setup flow and snapshot flow, start running")
 			state.updateStatus(ctx, logger, protos.FlowStatus_STATUS_RUNNING)
 		}
-		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg, state)
+		return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, internal.MinimizeFlowConfiguration(cfg), state)
 	}
 
 	var finished bool
@@ -837,7 +824,8 @@ func CDCFlowWorkflow(
 		WaitForCancellation: true,
 		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
 	}))
-	syncFlowFuture := workflow.ExecuteActivity(syncCtx, flowable.SyncFlow, cfg, state.SyncFlowOptions)
+	state.SyncFlowOptions.TableMappings = []*protos.TableMapping{}
+	syncFlowFuture := workflow.ExecuteActivity(syncCtx, flowable.SyncFlow, internal.MinimizeFlowConfiguration(cfg), state.SyncFlowOptions)
 
 	mainLoopSelector := workflow.NewNamedSelector(ctx, "MainLoop")
 	mainLoopSelector.AddReceive(ctx.Done(), func(_ workflow.ReceiveChannel, _ bool) {
@@ -958,7 +946,7 @@ func CDCFlowWorkflow(
 			if state.ActiveSignal == model.TerminateSignal || state.ActiveSignal == model.ResyncSignal {
 				return state, workflow.NewContinueAsNewError(ctx, DropFlowWorkflow, state.DropFlowInput)
 			}
-			return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, cfg, state)
+			return state, workflow.NewContinueAsNewError(ctx, CDCFlowWorkflow, internal.MinimizeFlowConfiguration(cfg), state)
 		}
 	}
 }
