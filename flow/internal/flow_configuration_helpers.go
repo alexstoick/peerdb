@@ -11,6 +11,22 @@ import (
 	"github.com/PeerDB-io/peerdb/flow/shared"
 )
 
+func TableNameMapping(tableMappings []*protos.TableMapping, resync bool) map[string]string {
+	tblNameMapping := make(map[string]string, len(tableMappings))
+	if resync {
+		for _, mapping := range tableMappings {
+			if mapping.Engine != protos.TableEngine_CH_ENGINE_NULL {
+				mapping.DestinationTableIdentifier += "_resync"
+			}
+		}
+	}
+	for _, v := range tableMappings {
+		tblNameMapping[v.SourceTableIdentifier] = v.DestinationTableIdentifier
+	}
+
+	return tblNameMapping
+}
+
 func FetchConfigFromDB(ctx context.Context, catalogPool shared.CatalogPool, flowName string) (*protos.FlowConnectionConfigsCore, error) {
 	var configBytes sql.RawBytes
 	if err := catalogPool.QueryRow(ctx,
