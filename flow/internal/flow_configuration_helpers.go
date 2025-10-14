@@ -61,7 +61,7 @@ func FetchTableMappingsFromDB(ctx context.Context, flowJobName string, version u
 		return nil, err
 	}
 	rows, err := pool.Query(ctx,
-		"select table_mapping from table_mappings where flow_name = $1 AND version = $2",
+		"select table_mappings from table_mappings where flow_name = $1 AND version = $2",
 		flowJobName, version,
 	)
 	if err != nil {
