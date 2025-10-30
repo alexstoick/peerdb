@@ -128,7 +128,7 @@ func (a *FlowableActivity) EnsurePullability(
 	defer connectors.CloseConnector(ctx, srcConn)
 
 	// We can fetch from the DB, as we are in the activity
-	cfg, err := internal.FetchConfigFromDB(config.FlowJobName, ctx)
+	cfg, err := internal.FetchConfigFromDB(ctx, a.CatalogPool, config.FlowJobName)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (a *FlowableActivity) SetupTableSchema(
 	}
 	defer connectors.CloseConnector(ctx, srcConn)
 
-	cfg, err := internal.FetchConfigFromDB(config.FlowName, ctx)
+	cfg, err := internal.FetchConfigFromDB(ctx, a.CatalogPool, config.FlowName)
 	if err != nil {
 		return err
 	}
@@ -265,7 +265,7 @@ func (a *FlowableActivity) CreateNormalizedTable(
 		return nil, err
 	}
 
-	cfg, err := internal.FetchConfigFromDB(config.FlowName, ctx)
+	cfg, err := internal.FetchConfigFromDB(ctx, a.CatalogPool, config.FlowName)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +323,7 @@ func (a *FlowableActivity) SyncFlow(
 	var syncingBatchID atomic.Int64
 	var syncState atomic.Pointer[string]
 
-	cfg, err := internal.FetchConfigFromDB(config.FlowJobName, ctx)
+	cfg, err := internal.FetchConfigFromDB(ctx, a.CatalogPool, config.FlowJobName)
 	if err != nil {
 		return err
 	}

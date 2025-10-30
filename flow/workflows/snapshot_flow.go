@@ -282,7 +282,13 @@ func (s *SnapshotFlowExecution) cloneTables(
 
 	configCtx := context.Background()
 	defer configCtx.Done()
-	cfg, err := internal.FetchConfigFromDB(s.config.FlowJobName, configCtx)
+	pool, err := internal.GetCatalogConnectionPoolFromEnv(configCtx)
+	if err != nil {
+		return err
+	}
+	defer pool.Pool.Close()
+
+	cfg, err := internal.FetchConfigFromDB(configCtx, pool, s.config.FlowJobName)
 	if err != nil {
 		return err
 	}

@@ -67,7 +67,7 @@ func (a *SnapshotActivity) SetupReplication(
 
 	configCtx := context.Background()
 	defer configCtx.Done()
-	cfg, err := internal.FetchConfigFromDB(config.FlowJobName, configCtx)
+	cfg, err := internal.FetchConfigFromDB(configCtx, a.CatalogPool, config.FlowJobName)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +192,7 @@ func (a *SnapshotActivity) GetDefaultPartitionKeyForTables(
 	}
 	defer connectors.CloseConnector(ctx, connector)
 
-	cfg, err := internal.FetchConfigFromDB(input.FlowJobName, ctx)
+	cfg, err := internal.FetchConfigFromDB(ctx, a.CatalogPool, input.FlowJobName)
 	if err != nil {
 		return nil, err
 	}

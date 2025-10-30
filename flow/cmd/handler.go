@@ -96,7 +96,7 @@ func (h *FlowRequestHandler) createCdcJobEntry(ctx context.Context,
 	}
 
 	// Insert the table mappings into the DB
-	tableMappingsBytes, err := internal.TableMappingsToBytes(req.TableMappings)
+	tableMappingsBytes, err := internal.TableMappingsToBytes(connectionConfigs.TableMappings)
 	if err != nil {
 		return fmt.Errorf("unable to marshal table mappings: %w", err)
 	}
@@ -104,7 +104,7 @@ func (h *FlowRequestHandler) createCdcJobEntry(ctx context.Context,
 	stmt := `INSERT INTO table_mappings (flow_name, version, table_mapping) VALUES ($1, $2, $3)
 	 ON CONFLICT (flow_name, version) DO UPDATE SET table_mapping = EXCLUDED.table_mapping`
 	version := 1
-	_, err = h.pool.Exec(ctx, stmt, req.ConnectionConfigs.FlowJobName, version, tableMappingsBytes)
+	_, err = h.pool.Exec(ctx, stmt, connectionConfigs.FlowJobName, version, tableMappingsBytes)
 
 	return nil
 }

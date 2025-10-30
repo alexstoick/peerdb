@@ -139,6 +139,7 @@ message FlowConnectionConfigsCore {
 
   map<string, string> env = 24;
   uint32 version = 25;
+  uint32 table_mapping_version = 27;
 }
 
 message RenameTableOption {
